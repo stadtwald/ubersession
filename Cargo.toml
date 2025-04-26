@@ -20,7 +20,7 @@ version = '0.4.40'
 
 [dependencies.clap]
 version = '4.5.37'
-features = ['derive']
+features = ['derive', 'env']
 
 [dependencies.data-encoding]
 version = '2.9.0'
@@ -31,6 +31,9 @@ version = '2.2.3'
 [dependencies.ed25519-dalek]
 version = '2.1.1'
 features = ['pem', 'rand_core']
+
+[dependencies.thiserror]
+version = "2.0.12"
 
 [dependencies.tokio]
 version = '1.44.2'
