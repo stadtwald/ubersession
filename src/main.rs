@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[derive(Args)]
 struct GenerateKey {
     #[arg(short = 'o', long)]
-    private_file: Option<PathBuf>,
+    private_key_file: Option<PathBuf>,
 
     #[arg(short = 'C', long)]
     comment: Option<String>
@@ -21,7 +21,7 @@ struct Serve {
 
     /// What private key to use for signing tokens
     #[arg(short = 'k', long, env = "UBERSESSION_PRIVATE_KEY_FILE")]
-    private_file: PathBuf,
+    private_key_file: PathBuf,
 
     /// How long normal tokens last before being considered expired, in seconds
     #[arg(long, default_value_t = 366 * 86400)]
