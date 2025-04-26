@@ -1,48 +1,10 @@
-use clap::{Args, Parser, Subcommand};
-use std::net::SocketAddr;
-use std::path::PathBuf;
+mod generate_key;
+mod serve;
 
-#[derive(Clone, Debug)]
-#[derive(Args)]
-pub struct GenerateKey {
-    #[arg(short = 'o', long)]
-    pub private_key_file: PathBuf,
+use clap::{Parser, Subcommand};
 
-    #[arg(short = 'C', long)]
-    pub comment: Option<String>
-}
-
-#[derive(Clone, Debug)]
-#[derive(Args)]
-pub struct Serve {
-    /// What port to listen for requests on
-    #[arg(long, default_value = "0.0.0.0:3000", env = "UBERSESSION_LISTEN")]
-    pub listen: SocketAddr,
-
-    /// What private key to use for signing tokens
-    #[arg(short = 'k', long, env = "UBERSESSION_PRIVATE_KEY_FILE")]
-    pub private_key_file: PathBuf,
-
-    /// How long normal tokens last before being considered expired, in seconds
-    #[arg(long, default_value_t = 366 * 86400)]
-    pub token_expiry: u32,
-
-    /// How long token requests last before being considered expired, in seconds
-    #[arg(long, default_value_t = 600)]
-    pub token_request_expiry: u32,
-
-    /// Make workflow visible to the user
-    #[arg(long)]
-    pub verbose_workflow: bool,
-
-    /// Turn off fallback to plain HTML when JavaScript support is not available
-    #[arg(long)]
-    pub no_plain_html: bool,
-
-    /// Prefix to use for workflow URLs (will have / suffixed automatically)
-    #[arg(long, default_value = "/_session")]
-    pub url_prefix: String
-}
+use crate::cli::generate_key::GenerateKey;
+use crate::cli::serve::Serve;
 
 #[derive(Clone, Debug)]
 #[derive(Subcommand)]
