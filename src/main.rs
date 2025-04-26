@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[derive(Args)]
 struct GenerateKey {
     #[arg(short = 'o', long)]
-    private_key_file: Option<PathBuf>,
+    private_key_file: PathBuf,
 
     #[arg(short = 'C', long)]
     comment: Option<String>
