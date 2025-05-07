@@ -11,10 +11,6 @@ version = '1.0.98'
 [dependencies.axum]
 version = '0.8.3'
 
-[dependencies.borsh]
-version = '1.5.7'
-features = ['derive']
-
 [dependencies.chrono]
 version = '0.4.40'
 
@@ -32,6 +28,18 @@ version = '2.2.3'
 version = '2.1.1'
 features = ['pem', 'rand_core']
 
+[dependencies.rand]
+version = '0.8.5'
+default-features = false
+features = ['alloc', 'getrandom']
+
+[dependencies.serde]
+version = '1.0.219'
+features = ['derive']
+
+[dependencies.serde_json]
+version = '1.0.140'
+
 [dependencies.thiserror]
 version = "2.0.12"
 
@@ -41,5 +49,5 @@ features = ['full']
 
 [dependencies.uuid]
 version = '1.16.0'
-features = ['borsh']
+features = ['serde']
 
