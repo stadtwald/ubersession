@@ -41,11 +41,7 @@ pub struct Serve {
     #[arg(long, short = 'd')]
     pub domain: Vec<String>,
 
-    /// Cookie to store authoritative session state in
-    #[arg(long, default_value = "UBERSESSION_AUTHORITY")]
-    pub authority_cookie: String,
-
-    /// Cookie to store propogated session state in
+    /// Cookie to store session tokens in
     #[arg(long, default_value = "UBERSESSION")]
     pub cookie: String
 }
