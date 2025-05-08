@@ -22,12 +22,7 @@ impl GetPublicKey {
                 buf
             };
         let keypair_description: crate::wire::Keypair = serde_json::from_slice(&raw_input)?;
-        if keypair_description.algo != "ed25519" {
-            return Err(anyhow::anyhow!("Only ed25519 keypairs are supported"));
-        }
-        let signing_key_raw_bytes: [u8; 32] = BASE64URL_NOPAD.decode(&keypair_description.private_key.as_bytes())?.as_slice().try_into()?;
-        
-        let signing_key = ed25519_dalek::SigningKey::from_bytes(&signing_key_raw_bytes);
+        let signing_key = keypair_description.try_loading_signing_key()?;
         let verifying_key = signing_key.verifying_key();
         let public_key_description =
             crate::wire::PublicKey {
