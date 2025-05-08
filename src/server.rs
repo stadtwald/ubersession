@@ -2,7 +2,7 @@ use ed25519_dalek::SigningKey;
 use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
-pub struct ServerParameters {
+pub struct Server {
     listen: SocketAddr,
     signing_key: SigningKey,
     token_expiry: u32,
@@ -15,8 +15,8 @@ pub struct ServerParameters {
     cookie: String
 }
 
-impl ServerParameters {
-    pub fn try_load_from_serve_opts(opts: crate::cli::serve::Serve) -> anyhow::Result<Self> {
+impl Server {
+    pub fn try_init_from_serve_opts(opts: crate::cli::serve::Serve) -> anyhow::Result<Self> {
         let cookie = opts.cookie.trim();
         let mut url_prefix = opts.url_prefix.trim().to_owned();
         if opts.token_expiry < 60 {
@@ -42,7 +42,7 @@ impl ServerParameters {
                 domains.push(opts.authority.clone());
             }
 
-            Ok(ServerParameters {
+            Ok(Self {
                 listen: opts.listen,
                 signing_key: signing_key,
                 token_expiry: opts.token_expiry,
@@ -56,9 +56,10 @@ impl ServerParameters {
             })
         }
     }
+
+    pub async fn serve(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
-pub async fn serve(_parameters: ServerParameters) -> anyhow::Result<()> {
-    Ok(())
-}
 

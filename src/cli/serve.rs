@@ -2,7 +2,7 @@ use clap::Args;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use crate::server::{ServerParameters, serve};
+use crate::server::Server;
 
 #[derive(Clone, Debug)]
 #[derive(Args)]
@@ -50,10 +50,10 @@ pub struct Serve {
 
 impl Serve {
     pub fn run(self) -> anyhow::Result<()> {
-        let server_parameters = ServerParameters::try_load_from_serve_opts(self)?;
+        let server = Server::try_init_from_serve_opts(self)?;
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
-        rt.block_on(serve(server_parameters))
+        rt.block_on(server.serve())
     }
 }
 
