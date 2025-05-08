@@ -2,6 +2,8 @@ use clap::Args;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
+use crate::server::{ServerParameters, serve};
+
 #[derive(Clone, Debug)]
 #[derive(Args)]
 pub struct Serve {
@@ -38,8 +40,8 @@ pub struct Serve {
     pub authority: String,
 
     /// Domain to propogate session to
-    #[arg(long, short = 'd')]
-    pub domain: Vec<String>,
+    #[arg(long = "domain", short = 'd')]
+    pub domains: Vec<String>,
 
     /// Cookie to store session tokens in
     #[arg(long, default_value = "UBERSESSION")]
@@ -48,7 +50,10 @@ pub struct Serve {
 
 impl Serve {
     pub fn run(self) -> anyhow::Result<()> {
-        Ok(())
+        let server_parameters = ServerParameters::try_load_from_serve_opts(self)?;
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+
+        rt.block_on(serve(server_parameters))
     }
 }
 

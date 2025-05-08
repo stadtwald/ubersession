@@ -1,6 +1,6 @@
-mod generate_key;
-mod get_public_key;
-mod serve;
+pub mod generate_key;
+pub mod get_public_key;
+pub mod serve;
 
 use clap::{Parser, Subcommand};
 
