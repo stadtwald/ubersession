@@ -31,7 +31,28 @@ pub struct Serve {
 
     /// Prefix to use for workflow URLs (will have / suffixed automatically)
     #[arg(long, default_value = "/_session")]
-    pub url_prefix: String
+    pub url_prefix: String,
+
+    /// Domain to use for managing authoritative session state
+    #[arg(long, short = 'a')]
+    pub authority: String,
+
+    /// Domain to propogate session to
+    #[arg(long, short = 'd')]
+    pub domain: Vec<String>,
+
+    /// Cookie to store authoritative session state in
+    #[arg(long, default_value = "UBERSESSION_AUTHORITY")]
+    pub authority_cookie: String,
+
+    /// Cookie to store propogated session state in
+    #[arg(long, default_value = "UBERSESSION")]
+    pub cookie: String
 }
 
+impl Serve {
+    pub fn run(self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
 

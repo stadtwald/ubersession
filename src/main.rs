@@ -10,7 +10,7 @@ fn main() -> anyhow::Result<()> {
     match opts.command {
         Command::GenerateKey(opts) => opts.run(),
         Command::GetPublicKey(opts) => opts.run(),
-        Command::Serve(_opts) => unimplemented!("subcommand not yet implemented")
+        Command::Serve(opts) => opts.run()
     }
 }
 
