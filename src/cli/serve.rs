@@ -40,8 +40,8 @@ pub struct Serve {
     pub authority: String,
 
     /// Domain to propogate session to
-    #[arg(long = "domain", short = 'd')]
-    pub domains: Vec<String>,
+    #[arg(long = "host", short = 'd')]
+    pub hosts: Vec<String>,
 
     /// Cookie to store session tokens in
     #[arg(long, default_value = "UBERSESSION")]

@@ -12,7 +12,7 @@ pub struct Server {
     no_plain_html: bool,
     url_prefix: String,
     authority: String,
-    domains: HashSet<String>,
+    hosts: HashSet<String>,
     cookie: String
 }
 
@@ -38,11 +38,11 @@ impl Server {
             }
 
             let authority = opts.authority.trim().to_ascii_lowercase();
-            let mut domains = HashSet::new();
-            domains.insert(authority.clone());
+            let mut hosts = HashSet::new();
+            hosts.insert(authority.clone());
 
-            for domain in opts.domains {
-                domains.insert(domain.trim().to_ascii_lowercase());
+            for host in opts.hosts {
+                hosts.insert(host.trim().to_ascii_lowercase());
             }
 
             Ok(Self {
@@ -54,7 +54,7 @@ impl Server {
                 no_plain_html: opts.no_plain_html,
                 url_prefix: url_prefix,
                 authority: authority,
-                domains: domains,
+                hosts: hosts,
                 cookie: cookie.to_owned()
             })
         }
