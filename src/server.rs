@@ -1,4 +1,5 @@
 use ed25519_dalek::SigningKey;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
 #[derive(Clone, Debug)]
@@ -11,7 +12,7 @@ pub struct Server {
     no_plain_html: bool,
     url_prefix: String,
     authority: String,
-    domains: Vec<String>,
+    domains: HashSet<String>,
     cookie: String
 }
 
@@ -36,10 +37,12 @@ impl Server {
                 url_prefix.push('/');
             }
 
-            let mut domains = opts.domains;
+            let authority = opts.authority.trim().to_ascii_lowercase();
+            let mut domains = HashSet::new();
+            domains.insert(authority.clone());
 
-            if !domains.contains(&opts.authority) {
-                domains.push(opts.authority.clone());
+            for domain in opts.domains {
+                domains.insert(domain.trim().to_ascii_lowercase());
             }
 
             Ok(Self {
@@ -50,7 +53,7 @@ impl Server {
                 verbose_workflow: opts.verbose_workflow,
                 no_plain_html: opts.no_plain_html,
                 url_prefix: url_prefix,
-                authority: opts.authority,
+                authority: authority,
                 domains: domains,
                 cookie: cookie.to_owned()
             })
