@@ -25,7 +25,7 @@ impl ServerParameters {
             Err(anyhow::anyhow!("Token request expirty must be at least ten seconds"))
         } else if cookie.len() < 1 {
             Err(anyhow::anyhow!("Cookie name must not be empty"))
-        } else if url_prefix.starts_with('/') {
+        } else if !url_prefix.starts_with('/') {
             Err(anyhow::anyhow!("URL prefix must start with a forward slash (/)"))
         } else {
             let raw_input = std::fs::read(&opts.private_key_file)?;
