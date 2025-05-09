@@ -35,7 +35,7 @@ impl Server {
         if opts.token_expiry < 60 {
             Err(anyhow::anyhow!("Token expiry must be at least a minute"))
         } else if opts.token_request_expiry < 10 {
-            Err(anyhow::anyhow!("Token request expirty must be at least ten seconds"))
+            Err(anyhow::anyhow!("Token request expiry must be at least ten seconds"))
         } else if cookie.len() < 1 {
             Err(anyhow::anyhow!("Cookie name must not be empty"))
         } else if !url_prefix.starts_with('/') {
