@@ -1,7 +1,8 @@
 use axum::{Extension, Router, serve};
-use axum::extract::Path;
-use axum::http::header::{HeaderMap, HOST};
+use axum::extract::{Path, Request};
+use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, HOST};
 use axum::http::status::StatusCode;
+use axum::middleware::Next;
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use ed25519_dalek::SigningKey;
@@ -90,6 +91,7 @@ impl Server {
                 };
 
             router = router.layer(Extension(Arc::new(settings)));
+            router = router.layer(axum::middleware::from_fn(set_cache_control));
 
             Ok(Self {
                 listen: opts.listen,
@@ -143,5 +145,14 @@ async fn handle_400() -> impl IntoResponse {
         StatusCode::BAD_REQUEST,
         Html("<!DOCTYPE html><html><head><title>400 Bad Request</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>400 Bad Request</h1></body></html>")
     )
+}
+
+const NO_CACHE: HeaderValue = HeaderValue::from_static("private; no-cache");
+
+async fn set_cache_control(request: Request, next: Next) -> impl IntoResponse {
+    let response = next.run(request).await;
+    let mut headers = HeaderMap::new();
+    headers.insert(CACHE_CONTROL, NO_CACHE);
+    (headers, response)
 }
 
