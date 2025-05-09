@@ -1,6 +1,9 @@
+use axum::{Router, serve};
+use axum::routing::{get, post};
 use ed25519_dalek::SigningKey;
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -10,7 +13,7 @@ pub struct Server {
     token_request_expiry: u32,
     verbose_workflow: bool,
     no_plain_html: bool,
-    url_prefix: String,
+    router: Router,
     authority: String,
     hosts: HashSet<String>,
     cookie: String
@@ -37,6 +40,18 @@ impl Server {
                 url_prefix.push('/');
             }
 
+            let mut router = Router::new();
+
+            {
+                let url = format!("{}service", url_prefix);
+                router = router.route(&url, get(handle_service_request));
+            }
+
+            {
+                let url = format!("{}receive", url_prefix);
+                router = router.route(&url, post(handle_receive_request));
+            }
+
             let authority = opts.authority.trim().to_ascii_lowercase();
             let mut hosts = HashSet::new();
             hosts.insert(authority.clone());
@@ -52,7 +67,7 @@ impl Server {
                 token_request_expiry: opts.token_request_expiry,
                 verbose_workflow: opts.verbose_workflow,
                 no_plain_html: opts.no_plain_html,
-                url_prefix: url_prefix,
+                router: router,
                 authority: authority,
                 hosts: hosts,
                 cookie: cookie.to_owned()
@@ -60,9 +75,20 @@ impl Server {
         }
     }
 
-    pub async fn serve(&self) -> anyhow::Result<()> {
+    pub async fn serve(self) -> anyhow::Result<()> {
+        let listener = TcpListener::bind(self.listen).await?;
+        serve(listener, self.router).await?;
         Ok(())
     }
 }
+
+async fn handle_service_request() -> () {
+    ()
+}
+
+async fn handle_receive_request() -> () {
+    ()
+}
+
 
 
