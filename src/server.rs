@@ -1,22 +1,31 @@
-use axum::{Router, serve};
+use axum::{Extension, Router, serve};
+use axum::extract::Path;
+use axum::http::header::{HeaderMap, HOST};
+use axum::http::status::StatusCode;
+use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
 use ed25519_dalek::SigningKey;
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
 #[derive(Clone, Debug)]
 pub struct Server {
     listen: SocketAddr,
+    router: Router
+}
+
+#[derive(Clone, Debug)]
+struct Settings {
     signing_key: SigningKey,
     token_expiry: u32,
     token_request_expiry: u32,
     verbose_workflow: bool,
     no_plain_html: bool,
-    router: Router,
     authority: String,
     hosts: HashSet<String>,
-    cookie: String
+    cookie: String   
 }
 
 impl Server {
@@ -43,7 +52,7 @@ impl Server {
             let mut router = Router::new();
 
             {
-                let url = format!("{}service", url_prefix);
+                let url = format!("{}service/{{host}}", url_prefix);
                 router = router.route(&url, get(handle_service_request));
             }
 
@@ -51,6 +60,14 @@ impl Server {
                 let url = format!("{}receive", url_prefix);
                 router = router.route(&url, post(handle_receive_request));
             }
+
+            {
+                let url = format!("{}init", url_prefix);
+                router = router.route(&url, get(handle_init_request));
+            }
+
+            router = router.fallback(handle_404);
+            router = router.method_not_allowed_fallback(handle_400);
 
             let authority = opts.authority.trim().to_ascii_lowercase();
             let mut hosts = HashSet::new();
@@ -60,17 +77,23 @@ impl Server {
                 hosts.insert(host.trim().to_ascii_lowercase());
             }
 
+            let settings = 
+                Settings {
+                    signing_key: signing_key,
+                    token_expiry: opts.token_expiry,
+                    token_request_expiry: opts.token_request_expiry,
+                    verbose_workflow: opts.verbose_workflow,
+                    no_plain_html: opts.no_plain_html,
+                    authority: authority,
+                    hosts: hosts,
+                    cookie: cookie.to_owned()
+                };
+
+            router = router.layer(Extension(Arc::new(settings)));
+
             Ok(Self {
                 listen: opts.listen,
-                signing_key: signing_key,
-                token_expiry: opts.token_expiry,
-                token_request_expiry: opts.token_request_expiry,
-                verbose_workflow: opts.verbose_workflow,
-                no_plain_html: opts.no_plain_html,
-                router: router,
-                authority: authority,
-                hosts: hosts,
-                cookie: cookie.to_owned()
+                router: router
             })
         }
     }
@@ -82,13 +105,43 @@ impl Server {
     }
 }
 
-async fn handle_service_request() -> () {
-    ()
+async fn handle_service_request(headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Path(host): Path<String>) -> impl IntoResponse {
+    if !settings.hosts.contains(&host) {
+        handle_404().await.into_response()
+    } else if headers.get(HOST).map(|x| x.to_str().map_err(|_| ())) != Some(Ok(settings.authority.as_str())) {
+        handle_404().await.into_response()
+    } else {
+        ().into_response()
+    }
 }
 
-async fn handle_receive_request() -> () {
-    ()
+async fn handle_receive_request(headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>) -> impl IntoResponse {
+    if !headers.get(HOST).map_or(false, |x| x.to_str().map_or(false, |x| settings.hosts.contains(x))) {
+        handle_404().await.into_response()
+    } else {
+        ().into_response()
+    }
 }
 
+async fn handle_init_request(headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>) -> impl IntoResponse {
+    if !headers.get(HOST).map_or(false, |x| x.to_str().map_or(false, |x| settings.hosts.contains(x))) {
+        handle_404().await.into_response()
+    } else {
+        ().into_response()
+    }
+}
 
+async fn handle_404() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Html("<!DOCTYPE html><html><head><title>404 Not Found</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>404 Not Found</h1></body></html>")
+    )
+}
+
+async fn handle_400() -> impl IntoResponse {
+    (
+        StatusCode::BAD_REQUEST,
+        Html("<!DOCTYPE html><html><head><title>400 Bad Request</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>400 Bad Request</h1></body></html>")
+    )
+}
 
