@@ -93,9 +93,9 @@ impl Server {
                     cookie: cookie.to_owned()
                 };
 
+            router = router.layer(axum::middleware::from_fn(token_cookie));
             router = router.layer(Extension(Arc::new(settings)));
             router = router.layer(axum::middleware::from_fn(set_cache_control));
-            router = router.layer(axum::middleware::from_fn(token_cookie));
 
             Ok(Self {
                 listen: opts.listen,
@@ -275,7 +275,8 @@ async fn token_cookie(request_headers: HeaderMap, Extension(settings): Extension
             let session_token = SessionToken::new(&settings.signing_key, settings.token_expiry, settings.authority.clone());
             let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
             let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
-            response_headers.insert(SET_COOKIE, HeaderValue::from_str(&encoded_session_token_descriptor).unwrap());
+            let cookie_value = format!("{}={}", settings.cookie, encoded_session_token_descriptor);
+            response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
             session_token
         };
 
