@@ -49,5 +49,5 @@ features = ['full']
 
 [dependencies.uuid]
 version = '1.16.0'
-features = ['serde']
+features = ['serde', 'v4']
 
