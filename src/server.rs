@@ -1,9 +1,9 @@
 use axum::{Extension, Router, serve};
 use axum::extract::{Path, Request};
-use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, COOKIE, HOST, SET_COOKIE};
+use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, COOKIE, HOST, LOCATION, SET_COOKIE};
 use axum::http::status::StatusCode;
 use axum::middleware::Next;
-use axum::response::{Html, IntoResponse};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
@@ -29,7 +29,9 @@ struct Settings {
     no_plain_html: bool,
     authority: String,
     hosts: HashSet<String>,
-    cookie: String   
+    cookie: String,
+    protocol: &'static str,
+    url_prefix: String
 }
 
 impl Server {
@@ -90,7 +92,9 @@ impl Server {
                     no_plain_html: opts.no_plain_html,
                     authority: authority,
                     hosts: hosts,
-                    cookie: cookie.to_owned()
+                    cookie: cookie.to_owned(),
+                    protocol: if opts.insecure_http { "http" } else { "https" },
+                    url_prefix: url_prefix
                 };
 
             router = router.layer(axum::middleware::from_fn(token_cookie));
@@ -150,6 +154,14 @@ async fn handle_400() -> impl IntoResponse {
         Html("<!DOCTYPE html><html><head><title>400 Bad Request</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>400 Bad Request</h1></body></html>")
     )
 }
+
+async fn handle_500() -> impl IntoResponse {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Html("<!DOCTYPE html><html><head><title>500 Internal Server Error</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>500 Internal Server Error</h1></body></html>")
+    )
+}
+
 
 const NO_CACHE: HeaderValue = HeaderValue::from_static("private; no-cache");
 
@@ -230,7 +242,7 @@ impl TryFrom<crate::wire::SessionToken> for SessionToken {
     }
 }
 
-fn load_current_session_token(settings: Arc<Settings>, request_headers: HeaderMap) -> Option<SessionToken> {
+fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
     let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
     let cookie_header_value = request_headers.get(COOKIE)?.to_str().ok()?;
     if cookie_header_value.len() > 4096 {
@@ -265,25 +277,37 @@ fn load_current_session_token(settings: Arc<Settings>, request_headers: HeaderMa
     Some(session_token)
 }
 
-async fn token_cookie(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, mut request: Request, next: Next) -> impl IntoResponse {
+async fn token_cookie(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, mut request: Request, next: Next) -> Response {
     let mut response_headers = HeaderMap::new();
 
     let current_session_token =
-        if let Some(current_session_token) = load_current_session_token(settings.clone(), request_headers) {
+        if let Some(current_session_token) = load_current_session_token(settings.clone(), &request_headers) {
             current_session_token
         } else {
-            let session_token = SessionToken::new(&settings.signing_key, settings.token_expiry, settings.authority.clone());
-            let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
-            let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
-            let cookie_value = format!("{}={}", settings.cookie, encoded_session_token_descriptor);
-            response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
-            session_token
+            if request_headers.get(HOST).map_or(false, |x| x == settings.authority.as_str()) {
+                let session_token = SessionToken::new(&settings.signing_key, settings.token_expiry, settings.authority.clone());
+                let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
+                let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
+                let cookie_value = format!("{}={}", settings.cookie, encoded_session_token_descriptor);
+                response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                session_token
+            } else if let Some(http_host) = request_headers.get(HOST).and_then(|x| x.to_str().ok().map(|x| x.to_owned())).and_then(|x| if settings.hosts.contains(&x) { Some(x) } else { None }) {
+                let uri = format!("{}://{}{}service/{}", settings.protocol, settings.authority, settings.url_prefix, http_host);
+                if let Ok(location) = HeaderValue::from_str(&uri) {
+                    response_headers.insert(LOCATION, location);
+                    return (StatusCode::SEE_OTHER, response_headers).into_response();
+                } else {
+                    return handle_500().await.into_response();
+                }
+            } else {
+                return handle_404().await.into_response();
+            }
         };
 
     request.extensions_mut().insert(current_session_token);
 
     let response = next.run(request).await;
 
-    (response_headers, response)
+    (response_headers, response).into_response()
 }
 

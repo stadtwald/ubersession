@@ -45,7 +45,11 @@ pub struct Serve {
 
     /// Cookie to store session tokens in
     #[arg(long, default_value = "UBERSESSION")]
-    pub cookie: String
+    pub cookie: String,
+
+    /// Utilise plain HTTP URLs
+    #[arg(long)]
+    pub insecure_http: bool
 }
 
 impl Serve {
