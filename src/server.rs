@@ -1,6 +1,7 @@
 use axum::{Extension, Router, serve};
-use axum::extract::{Path, Request};
+use axum::extract::{Path, Query, Request};
 use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, COOKIE, HOST, LOCATION, SET_COOKIE};
+use axum::http::Method;
 use axum::http::status::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
@@ -8,6 +9,7 @@ use axum::routing::{get, post};
 use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -115,13 +117,39 @@ impl Server {
     }
 }
 
-async fn handle_service_request(headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Path(host): Path<String>) -> impl IntoResponse {
+#[derive(Deserialize, Serialize)]
+struct ServiceRequestParameters {
+    path: Option<String>
+}
+
+async fn handle_service_request(
+    headers: HeaderMap,
+    Extension(settings): Extension<Arc<Settings>>,
+    Path(host): Path<String>,
+    Query(query): Query<ServiceRequestParameters>,
+    Extension(mut session_token): Extension<SessionToken>
+) -> impl IntoResponse {
     if !settings.hosts.contains(&host) {
         handle_404().await.into_response()
-    } else if headers.get(HOST).map(|x| x.to_str().map_err(|_| ())) != Some(Ok(settings.authority.as_str())) {
+    } else if !headers.get(HOST).map_or(false, |x| x == settings.authority.as_str()) {
         handle_404().await.into_response()
     } else {
-        ().into_response()
+        session_token.host = host.to_owned();
+        session_token.resign(&settings.signing_key);
+        let session_token_descriptor: crate::wire::SessionToken = session_token.into();
+        let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
+        let uri = format!("{}://{}{}init?{}", settings.protocol, host, settings.url_prefix, serde_urlencoded::to_string(query).unwrap());
+        let (button, styles) =
+            if settings.no_plain_html {
+                ("", "")
+            } else {
+                (
+                    "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>",
+                    "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
+                )
+            };
+        let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token_descriptor, button));
+        html.into_response()
     }
 }
 
@@ -195,6 +223,11 @@ impl SessionToken {
             };
         session_token.signature = signing_key.sign(&session_token.signable_message());
         session_token
+    }
+
+    fn resign(&mut self, signing_key: &SigningKey) -> () {
+        self.public_key = signing_key.verifying_key().as_bytes().clone();
+        self.signature = signing_key.sign(&self.signable_message());
     }
 
     fn signable_message(&self) -> Vec<u8> {
@@ -277,7 +310,12 @@ fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderM
     Some(session_token)
 }
 
-async fn token_cookie(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, mut request: Request, next: Next) -> Response {
+async fn token_cookie(
+    request_headers: HeaderMap,
+    Extension(settings): Extension<Arc<Settings>>,
+    mut request: Request,
+    next: Next
+) -> Response {
     let mut response_headers = HeaderMap::new();
 
     let current_session_token =
