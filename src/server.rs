@@ -16,6 +16,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
+use crate::errors::*;
+
 #[derive(Clone, Debug)]
 pub struct Server {
     listen: SocketAddr,
@@ -168,28 +170,6 @@ async fn handle_init_request(headers: HeaderMap, Extension(settings): Extension<
         ().into_response()
     }
 }
-
-async fn handle_404() -> impl IntoResponse {
-    (
-        StatusCode::NOT_FOUND,
-        Html("<!DOCTYPE html><html><head><title>404 Not Found</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>404 Not Found</h1></body></html>")
-    )
-}
-
-async fn handle_400() -> impl IntoResponse {
-    (
-        StatusCode::BAD_REQUEST,
-        Html("<!DOCTYPE html><html><head><title>400 Bad Request</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>400 Bad Request</h1></body></html>")
-    )
-}
-
-async fn handle_500() -> impl IntoResponse {
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        Html("<!DOCTYPE html><html><head><title>500 Internal Server Error</title></head><body style=\"background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif\"><h1>500 Internal Server Error</h1></body></html>")
-    )
-}
-
 
 const NO_CACHE: HeaderValue = HeaderValue::from_static("private; no-cache");
 

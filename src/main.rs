@@ -1,4 +1,5 @@
 mod cli;
+mod errors;
 mod wire;
 mod server;
 
