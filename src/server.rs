@@ -1,11 +1,10 @@
-use axum::{Extension, Router, serve};
-use axum::extract::{Path, Query, Request};
+use axum::{Extension, Form, Router, serve};
+use axum::extract::{Query, Request};
 use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, COOKIE, HOST, LOCATION, SET_COOKIE};
-use axum::http::Method;
 use axum::http::status::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -28,7 +27,6 @@ pub struct Server {
 struct Settings {
     signing_key: SigningKey,
     token_expiry: u32,
-    token_request_expiry: u32,
     verbose_workflow: bool,
     no_plain_html: bool,
     authority: String,
@@ -44,8 +42,6 @@ impl Server {
         let mut url_prefix = opts.url_prefix.trim().to_owned();
         if opts.token_expiry < 60 {
             Err(anyhow::anyhow!("Token expiry must be at least a minute"))
-        } else if opts.token_request_expiry < 10 {
-            Err(anyhow::anyhow!("Token request expiry must be at least ten seconds"))
         } else if cookie.len() < 1 {
             Err(anyhow::anyhow!("Cookie name must not be empty"))
         } else if !url_prefix.starts_with('/') {
@@ -62,18 +58,8 @@ impl Server {
             let mut router = Router::new();
 
             {
-                let url = format!("{}service/{{host}}", url_prefix);
-                router = router.route(&url, get(handle_service_request));
-            }
-
-            {
-                let url = format!("{}receive", url_prefix);
-                router = router.route(&url, post(handle_receive_request));
-            }
-
-            {
-                let url = format!("{}init", url_prefix);
-                router = router.route(&url, get(handle_init_request));
+                let url = format!("{}flow", url_prefix);
+                router = router.route(&url, get(handle_get).post(handle_post));
             }
 
             router = router.fallback(handle_404);
@@ -91,7 +77,6 @@ impl Server {
                 Settings {
                     signing_key: signing_key,
                     token_expiry: opts.token_expiry,
-                    token_request_expiry: opts.token_request_expiry,
                     verbose_workflow: opts.verbose_workflow,
                     no_plain_html: opts.no_plain_html,
                     authority: authority,
@@ -101,7 +86,6 @@ impl Server {
                     url_prefix: url_prefix
                 };
 
-            router = router.layer(axum::middleware::from_fn(token_cookie));
             router = router.layer(Extension(Arc::new(settings)));
             router = router.layer(axum::middleware::from_fn(set_cache_control));
 
@@ -121,53 +105,161 @@ impl Server {
 
 #[derive(Deserialize, Serialize)]
 struct ServiceRequestParameters {
+    #[serde(rename = "for")]
+    for_host: Option<String>,
     path: Option<String>
 }
 
-async fn handle_service_request(
-    headers: HeaderMap,
-    Extension(settings): Extension<Arc<Settings>>,
-    Path(host): Path<String>,
-    Query(query): Query<ServiceRequestParameters>,
-    Extension(mut session_token): Extension<SessionToken>
-) -> impl IntoResponse {
-    if !settings.hosts.contains(&host) {
-        handle_404().await.into_response()
-    } else if !headers.get(HOST).map_or(false, |x| x == settings.authority.as_str()) {
-        handle_404().await.into_response()
-    } else {
-        session_token.host = host.to_owned();
-        session_token.resign(&settings.signing_key);
-        let session_token_descriptor: crate::wire::SessionToken = session_token.into();
-        let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
-        let uri = format!("{}://{}{}init?{}", settings.protocol, host, settings.url_prefix, serde_urlencoded::to_string(query).unwrap());
-        let (button, styles) =
-            if settings.no_plain_html {
-                ("", "")
+#[derive(Deserialize, Serialize)]
+struct ServiceRequestBody {
+    token: String,
+    path: String
+}
+
+async fn handle_get(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Query(query): Query<ServiceRequestParameters>) -> Response {
+    (Transaction {
+        settings: settings,
+        query: query,
+        request_headers: request_headers,
+        body: None
+    }).run().await
+}
+
+async fn handle_post(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Form(body): Form<ServiceRequestBody>) -> Response {
+    (Transaction {
+        settings: settings,
+        query: ServiceRequestParameters {
+            for_host: None,
+            path: None
+        },
+        request_headers: request_headers,
+        body: Some(body)
+    }).run().await
+}
+
+struct Transaction {
+    settings: Arc<Settings>,
+    query: ServiceRequestParameters,
+    request_headers: HeaderMap,
+    body: Option<ServiceRequestBody>
+}
+
+impl Transaction {
+    async fn run(self) -> Response {
+        let http_host =
+            if let Some(http_host) = self.request_headers.get(HOST).and_then(|x| x.to_str().ok()) {
+                http_host
             } else {
-                (
-                    "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>",
-                    "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
-                )
+                return handle_400().await;
             };
-        let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token_descriptor, button));
-        html.into_response()
-    }
-}
+        let for_host = self.query.for_host.as_deref().unwrap_or(http_host);
+        let redir_path = {
+            let candidate_path =
+                if let Some(ref body) = self.body {
+                    body.path.as_str()
+                } else {
+                    self.query.path.as_deref().unwrap_or("/")
+                };
+            if candidate_path.starts_with(&self.settings.url_prefix) {
+                "/"
+            } else if !candidate_path.starts_with('/') {
+                "/"
+            } else {
+                candidate_path
+            }
+        };
+    
+        if self.settings.authority == http_host {
+            let mut response_headers = HeaderMap::new();
 
-async fn handle_receive_request(headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>) -> impl IntoResponse {
-    if !headers.get(HOST).map_or(false, |x| x.to_str().map_or(false, |x| settings.hosts.contains(x))) {
-        handle_404().await.into_response()
-    } else {
-        ().into_response()
-    }
-}
+            let authoritative_session_token =
+                if let Some(current_session_token) = load_current_session_token(self.settings.clone(), &self.request_headers) {
+                    current_session_token
+                } else {
+                    let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
+                    let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
+                    let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
+                    let cookie_value = format!("{}={}", self.settings.cookie, encoded_session_token_descriptor);
+                    response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                    session_token
+                };
 
-async fn handle_init_request(headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>) -> impl IntoResponse {
-    if !headers.get(HOST).map_or(false, |x| x.to_str().map_or(false, |x| settings.hosts.contains(x))) {
-        handle_404().await.into_response()
-    } else {
-        ().into_response()
+            if self.settings.authority == for_host {
+                if let Ok(redir_path_hv) = HeaderValue::from_str(redir_path) {
+                    response_headers.insert(LOCATION, redir_path_hv);
+                    (StatusCode::SEE_OTHER, response_headers).into_response()
+                } else {
+                    handle_400().await
+                }
+            } else {
+                let session_token = {
+                    let mut session_token = authoritative_session_token.clone();
+                    session_token.host = for_host.to_owned();
+                    session_token.resign(&self.settings.signing_key);
+                    session_token
+                };
+                let session_token_descriptor: crate::wire::SessionToken = session_token.into();
+                let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
+
+                let uri = format!("{}://{}{}flow?{}", self.settings.protocol, for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query).unwrap());
+                let (button, styles) =
+                    if self.settings.no_plain_html {
+                        ("", "")
+                    } else {
+                        (
+                            "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>",
+                            "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
+                        )
+                    };
+                let escaped_path = redir_path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+                let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token_descriptor, escaped_path, button));
+                html.into_response()
+            }
+        } else if self.settings.hosts.contains(http_host) && self.query.for_host.map_or(true, |x| x == http_host) {
+            let mut response_headers = HeaderMap::new();
+
+            let m_current_session_token = load_current_session_token(self.settings.clone(), &self.request_headers);
+           
+            if let Some(ref body) = self.body {
+                if let Some(new_session_token) = load_session_token(&body.token, http_host, self.settings.signing_key.verifying_key()) {
+                    if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
+                        let cookie_value = format!("{}={}", self.settings.cookie, body.token);
+                        response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                    }
+                    if let Ok(redir_path_hv) = HeaderValue::from_str(redir_path) {
+                        response_headers.insert(LOCATION, redir_path_hv);
+                        (StatusCode::SEE_OTHER, response_headers).into_response()
+                    } else {
+                        handle_400().await
+                    }
+                } else {
+                    handle_400().await
+                }
+            } else if m_current_session_token.is_some() {
+                if let Ok(redir_path_hv) = HeaderValue::from_str(redir_path) {
+                    response_headers.insert(LOCATION, redir_path_hv);
+                    (StatusCode::SEE_OTHER, response_headers).into_response()
+                } else {
+                    handle_400().await
+                }
+            } else {
+                let query = ServiceRequestParameters {
+                    path: Some(redir_path.to_owned()),
+                    for_host: Some(http_host.to_owned())
+                };
+
+                let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.settings.authority, self.settings.url_prefix, serde_urlencoded::to_string(&query).unwrap());
+
+                if let Ok(uri_hv) = HeaderValue::from_str(&uri) {
+                    response_headers.insert(LOCATION, uri_hv);
+                    (StatusCode::SEE_OTHER, response_headers).into_response()
+                } else {
+                    handle_400().await
+                }
+            }
+        } else {
+            handle_404().await
+        }
     }
 }
 
@@ -255,8 +347,25 @@ impl TryFrom<crate::wire::SessionToken> for SessionToken {
     }
 }
 
-fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
+fn load_session_token(encoded_token: &str, required_http_host: &str, verifying_key: VerifyingKey) -> Option<SessionToken> {
     let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
+    let text_session_value = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
+    let session_token_descriptor: crate::wire::SessionToken = serde_json::from_slice(&text_session_value).ok()?;
+    let session_token: SessionToken = session_token_descriptor.try_into().ok()?;
+    if !session_token.verify(verifying_key) {
+        return None;
+    }
+    if session_token.host != required_http_host {
+        return None;
+    }
+    if session_token.expires < current_timestamp {
+        return None;
+    }
+    Some(session_token)
+}
+
+
+fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
     let cookie_header_value = request_headers.get(COOKIE)?.to_str().ok()?;
     if cookie_header_value.len() > 4096 {
         return None;
@@ -274,58 +383,8 @@ fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderM
             }
             m_value?
         };
-    let text_session_value = BASE64URL_NOPAD.decode(raw_session_value.as_bytes()).ok()?;
-    let session_token_descriptor: crate::wire::SessionToken = serde_json::from_slice(&text_session_value).ok()?;
-    let session_token: SessionToken = session_token_descriptor.try_into().ok()?;
-    if !session_token.verify(settings.signing_key.verifying_key()) {
-        return None;
-    }
     let http_host = request_headers.get(HOST)?.to_str().ok()?;
-    if session_token.host != http_host {
-        return None;
-    }
-    if session_token.expires < current_timestamp {
-        return None;
-    }
-    Some(session_token)
+    load_session_token(&raw_session_value, &http_host, settings.signing_key.verifying_key())
 }
 
-async fn token_cookie(
-    request_headers: HeaderMap,
-    Extension(settings): Extension<Arc<Settings>>,
-    mut request: Request,
-    next: Next
-) -> Response {
-    let mut response_headers = HeaderMap::new();
-
-    let current_session_token =
-        if let Some(current_session_token) = load_current_session_token(settings.clone(), &request_headers) {
-            current_session_token
-        } else {
-            if request_headers.get(HOST).map_or(false, |x| x == settings.authority.as_str()) {
-                let session_token = SessionToken::new(&settings.signing_key, settings.token_expiry, settings.authority.clone());
-                let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
-                let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
-                let cookie_value = format!("{}={}", settings.cookie, encoded_session_token_descriptor);
-                response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
-                session_token
-            } else if let Some(http_host) = request_headers.get(HOST).and_then(|x| x.to_str().ok().map(|x| x.to_owned())).and_then(|x| if settings.hosts.contains(&x) { Some(x) } else { None }) {
-                let uri = format!("{}://{}{}service/{}", settings.protocol, settings.authority, settings.url_prefix, http_host);
-                if let Ok(location) = HeaderValue::from_str(&uri) {
-                    response_headers.insert(LOCATION, location);
-                    return (StatusCode::SEE_OTHER, response_headers).into_response();
-                } else {
-                    return handle_500().await.into_response();
-                }
-            } else {
-                return handle_404().await.into_response();
-            }
-        };
-
-    request.extensions_mut().insert(current_session_token);
-
-    let response = next.run(request).await;
-
-    (response_headers, response).into_response()
-}
 
