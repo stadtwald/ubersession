@@ -10,6 +10,8 @@ use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -116,43 +118,100 @@ struct ServiceRequestBody {
     path: String
 }
 
+async fn handle_errors(m_response: anyhow::Result<Response>) -> Response {
+    match m_response {
+        Ok(response) => response,
+        Err(error) =>
+            if error.is::<NotFound>() {
+                handle_404().await
+            } else if error.is::<InvalidRequest>() {
+                handle_400().await
+            } else {
+                handle_500().await
+            }
+    }
+}
+
+
 async fn handle_get(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Query(query): Query<ServiceRequestParameters>) -> Response {
-    (Transaction {
-        settings: settings,
-        query: query,
-        request_headers: request_headers,
-        body: None
-    }).run().await
+    handle_errors(TransactionBuilder::new(settings).with_query(query).with_request_headers(request_headers).build_and_run().await).await
 }
 
 async fn handle_post(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Form(body): Form<ServiceRequestBody>) -> Response {
-    (Transaction {
-        settings: settings,
-        query: ServiceRequestParameters {
-            for_host: None,
-            path: None
-        },
-        request_headers: request_headers,
-        body: Some(body)
-    }).run().await
+    handle_errors(TransactionBuilder::new(settings).with_request_headers(request_headers).with_body(body).build_and_run().await).await
 }
 
-struct Transaction {
+#[derive(Clone, Copy, Debug)]
+struct InvalidRequest;
+
+impl Error for InvalidRequest {}
+
+impl Display for InvalidRequest {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Invalid HTTP request")
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NotFound;
+
+impl Error for NotFound {}
+
+impl Display for NotFound {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("HTTP resource not found")
+    }
+}
+
+struct TransactionBuilder {
     settings: Arc<Settings>,
     query: ServiceRequestParameters,
     request_headers: HeaderMap,
     body: Option<ServiceRequestBody>
 }
 
-impl Transaction {
-    async fn run(self) -> Response {
+impl TransactionBuilder {
+    fn new(settings: Arc<Settings>) -> Self {
+        Self {
+            settings: settings,
+            query: ServiceRequestParameters {
+                for_host: None,
+                path: None
+            },
+            request_headers: HeaderMap::new(),
+            body: None
+        }
+    }
+
+    fn with_request_headers(mut self, request_headers: HeaderMap) -> Self {
+        self.request_headers = request_headers;
+        self
+    }
+
+    fn with_body(mut self, body: ServiceRequestBody) -> Self {
+        self.body = Some(body);
+        self
+    }
+
+    fn with_query(mut self, query: ServiceRequestParameters) -> Self {
+        self.query = query;
+        self
+    }
+
+    async fn build_and_run(self) -> anyhow::Result<Response> {
+        self.build()?.run().await
+    }
+
+    fn build(self) -> anyhow::Result<Transaction> {
         let http_host =
             if let Some(http_host) = self.request_headers.get(HOST).and_then(|x| x.to_str().ok()) {
-                http_host
+                http_host.to_owned()
             } else {
-                return handle_400().await;
+                Err(InvalidRequest)?
             };
-        let for_host = self.query.for_host.as_deref().unwrap_or(http_host);
+
+        let for_host = self.query.for_host.as_deref().unwrap_or(http_host.as_str()).to_owned();
+
         let redir_path = {
             let candidate_path =
                 if let Some(ref body) = self.body {
@@ -167,78 +226,109 @@ impl Transaction {
             } else {
                 candidate_path
             }
-        };
-    
-        if self.settings.authority == http_host {
-            let mut response_headers = HeaderMap::new();
+        }.to_owned();
 
-            let authoritative_session_token =
-                if let Some(current_session_token) = load_current_session_token(self.settings.clone(), &self.request_headers) {
-                    current_session_token
-                } else {
-                    let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
-                    let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
-                    let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
-                    let cookie_value = format!("{}={}", self.settings.cookie, encoded_session_token_descriptor);
-                    response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
-                    session_token
-                };
+        Ok(Transaction {
+            settings: self.settings,
+            request_headers: self.request_headers,
+            query: self.query,
+            http_host: http_host,
+            for_host: for_host,
+            redir_path: redir_path,
+            body: self.body
+        })
+    }
+}
 
-            if self.settings.authority == for_host {
-                (response_headers, redirect(&redir_path).await).into_response()
+struct Transaction {
+    settings: Arc<Settings>,
+    request_headers: HeaderMap,
+    query: ServiceRequestParameters,
+    http_host: String,
+    for_host: String,
+    redir_path: String,
+    body: Option<ServiceRequestBody>
+}
+
+impl Transaction {
+    async fn authority(self) -> anyhow::Result<Response> {
+        let mut response_headers = HeaderMap::new();
+
+        let authoritative_session_token =
+            if let Some(current_session_token) = load_current_session_token(self.settings.clone(), &self.request_headers) {
+                current_session_token
             } else {
-                let session_token = {
-                    let mut session_token = authoritative_session_token.clone();
-                    session_token.host = for_host.to_owned();
-                    session_token.resign(&self.settings.signing_key);
-                    session_token
-                };
-                let session_token_descriptor: crate::wire::SessionToken = session_token.into();
-                let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
+                let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
+                let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
+                let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
+                let cookie_value = format!("{}={}", self.settings.cookie, encoded_session_token_descriptor);
+                response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                session_token
+            };
 
-                let uri = format!("{}://{}{}flow?{}", self.settings.protocol, for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query).unwrap());
-                let (button, styles) =
-                    if self.settings.no_plain_html {
-                        ("", "")
-                    } else {
-                        (
-                            "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>",
-                            "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
-                        )
-                    };
-                let escaped_path = redir_path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
-                let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token_descriptor, escaped_path, button));
-                html.into_response()
-            }
-        } else if self.settings.hosts.contains(http_host) && self.query.for_host.map_or(true, |x| x == http_host) {
-
-            let m_current_session_token = load_current_session_token(self.settings.clone(), &self.request_headers);
-           
-            if let Some(ref body) = self.body {
-                if let Some(new_session_token) = load_session_token(&body.token, http_host, self.settings.signing_key.verifying_key()) {
-                    let mut response_headers = HeaderMap::new();
-                    if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
-                        let cookie_value = format!("{}={}", self.settings.cookie, body.token);
-                        response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
-                    }
-                    (response_headers, redirect(&redir_path).await).into_response()
-                } else {
-                    handle_400().await
-                }
-            } else if m_current_session_token.is_some() {
-                redirect(&redir_path).await
-            } else {
-                let query = ServiceRequestParameters {
-                    path: Some(redir_path.to_owned()),
-                    for_host: Some(http_host.to_owned())
-                };
-
-                let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.settings.authority, self.settings.url_prefix, serde_urlencoded::to_string(&query).unwrap());
-
-                redirect(&uri).await
-            }
+        if self.settings.authority == self.for_host {
+            Ok((response_headers, redirect(&self.redir_path)).into_response())
         } else {
-            handle_404().await
+            let session_token = {
+                let mut session_token = authoritative_session_token.clone();
+                session_token.host = self.for_host.clone();
+                session_token.resign(&self.settings.signing_key);
+                session_token
+            };
+            let session_token_descriptor: crate::wire::SessionToken = session_token.into();
+            let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token_descriptor)?.as_bytes());
+
+            let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query).unwrap());
+            let (button, styles) =
+                if self.settings.no_plain_html {
+                    ("", "")
+                } else {
+                    (
+                        "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>",
+                        "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
+                    )
+                };
+            let escaped_path = self.redir_path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+            let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token_descriptor, escaped_path, button));
+            Ok(html.into_response())
+        }
+    }
+
+    async fn app(self) -> anyhow::Result<Response> {
+        let m_current_session_token = load_current_session_token(self.settings.clone(), &self.request_headers);
+           
+        if let Some(ref body) = self.body {
+            if let Some(new_session_token) = load_session_token(&body.token, &self.http_host, self.settings.signing_key.verifying_key()) {
+                let mut response_headers = HeaderMap::new();
+                if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
+                    let cookie_value = format!("{}={}", self.settings.cookie, body.token);
+                    response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                }
+                Ok((response_headers, redirect(&self.redir_path)).into_response())
+            } else {
+                Err(InvalidRequest)?
+            }
+        } else if m_current_session_token.is_some() {
+            Ok(redirect(&self.redir_path))
+        } else {
+            let query = ServiceRequestParameters {
+                path: Some(self.redir_path.to_owned()),
+                for_host: Some(self.http_host.to_owned())
+            };
+
+            let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.settings.authority, self.settings.url_prefix, serde_urlencoded::to_string(&query).unwrap());
+
+            Ok(redirect(&uri))
+        }
+    }
+
+    async fn run(self) -> anyhow::Result<Response> {
+        if self.settings.authority == self.http_host {
+            self.authority().await
+        } else if self.settings.hosts.contains(&self.http_host) && self.query.for_host.as_deref().map_or(true, |x| x == self.http_host) {
+            self.app().await
+        } else {
+            Err(NotFound)?
         }
     }
 }
@@ -367,13 +457,15 @@ fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderM
     load_session_token(&raw_session_value, &http_host, settings.signing_key.verifying_key())
 }
 
-async fn redirect(uri: &str) -> Response {
+const SINGLE_SLASH: HeaderValue = HeaderValue::from_static("/");
+
+fn redirect(uri: &str) -> Response {
+    let mut response_headers = HeaderMap::new();
     if let Ok(redir_path_hv) = HeaderValue::from_str(uri) {
-        let mut response_headers = HeaderMap::new();
         response_headers.insert(LOCATION, redir_path_hv);
-        (StatusCode::SEE_OTHER, response_headers).into_response()
     } else {
-        handle_400().await
-    } 
+        response_headers.insert(LOCATION, SINGLE_SLASH);
+    }
+    (StatusCode::SEE_OTHER, response_headers).into_response()
 }
 
