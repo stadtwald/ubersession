@@ -185,12 +185,7 @@ impl Transaction {
                 };
 
             if self.settings.authority == for_host {
-                if let Ok(redir_path_hv) = HeaderValue::from_str(redir_path) {
-                    response_headers.insert(LOCATION, redir_path_hv);
-                    (StatusCode::SEE_OTHER, response_headers).into_response()
-                } else {
-                    handle_400().await
-                }
+                (response_headers, redirect(&redir_path).await).into_response()
             } else {
                 let session_token = {
                     let mut session_token = authoritative_session_token.clone();
@@ -216,32 +211,22 @@ impl Transaction {
                 html.into_response()
             }
         } else if self.settings.hosts.contains(http_host) && self.query.for_host.map_or(true, |x| x == http_host) {
-            let mut response_headers = HeaderMap::new();
 
             let m_current_session_token = load_current_session_token(self.settings.clone(), &self.request_headers);
            
             if let Some(ref body) = self.body {
                 if let Some(new_session_token) = load_session_token(&body.token, http_host, self.settings.signing_key.verifying_key()) {
+                    let mut response_headers = HeaderMap::new();
                     if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
                         let cookie_value = format!("{}={}", self.settings.cookie, body.token);
                         response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                     }
-                    if let Ok(redir_path_hv) = HeaderValue::from_str(redir_path) {
-                        response_headers.insert(LOCATION, redir_path_hv);
-                        (StatusCode::SEE_OTHER, response_headers).into_response()
-                    } else {
-                        handle_400().await
-                    }
+                    (response_headers, redirect(&redir_path).await).into_response()
                 } else {
                     handle_400().await
                 }
             } else if m_current_session_token.is_some() {
-                if let Ok(redir_path_hv) = HeaderValue::from_str(redir_path) {
-                    response_headers.insert(LOCATION, redir_path_hv);
-                    (StatusCode::SEE_OTHER, response_headers).into_response()
-                } else {
-                    handle_400().await
-                }
+                redirect(&redir_path).await
             } else {
                 let query = ServiceRequestParameters {
                     path: Some(redir_path.to_owned()),
@@ -250,12 +235,7 @@ impl Transaction {
 
                 let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.settings.authority, self.settings.url_prefix, serde_urlencoded::to_string(&query).unwrap());
 
-                if let Ok(uri_hv) = HeaderValue::from_str(&uri) {
-                    response_headers.insert(LOCATION, uri_hv);
-                    (StatusCode::SEE_OTHER, response_headers).into_response()
-                } else {
-                    handle_400().await
-                }
+                redirect(&uri).await
             }
         } else {
             handle_404().await
@@ -387,4 +367,13 @@ fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderM
     load_session_token(&raw_session_value, &http_host, settings.signing_key.verifying_key())
 }
 
+async fn redirect(uri: &str) -> Response {
+    if let Ok(redir_path_hv) = HeaderValue::from_str(uri) {
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert(LOCATION, redir_path_hv);
+        (StatusCode::SEE_OTHER, response_headers).into_response()
+    } else {
+        handle_400().await
+    } 
+}
 
