@@ -5,9 +5,8 @@ use axum::http::status::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::error::Error;
@@ -17,7 +16,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 
 use crate::errors::*;
-use crate::session_token::SessionToken;
+use crate::session_token::{SessionToken, SessionTokenLoader};
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -296,7 +295,8 @@ impl Transaction {
         let m_current_session_token = load_current_session_token(self.settings.clone(), &self.request_headers);
            
         if let Some(ref body) = self.body {
-            if let Some(new_session_token) = load_session_token(&body.token, &self.http_host, self.settings.signing_key.verifying_key()) {
+            let m_new_session_token = (SessionTokenLoader { required_http_host: &self.http_host, verifying_key: self.settings.signing_key.verifying_key() }).attempt_load(&body.token);
+            if let Some(new_session_token) = m_new_session_token {
                 let mut response_headers = HeaderMap::new();
                 if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
                     let cookie_value = format!("{}={}", self.settings.cookie, body.token);
@@ -340,43 +340,37 @@ async fn set_cache_control(request: Request, next: Next) -> impl IntoResponse {
     (headers, response)
 }
 
-fn load_session_token(encoded_token: &str, required_http_host: &str, verifying_key: VerifyingKey) -> Option<SessionToken> {
-    let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
-    let text_session_token = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
-    let session_token: SessionToken = serde_json::from_slice(&text_session_token).ok()?;
-    if !session_token.verify(verifying_key) {
-        return None;
-    }
-    if session_token.host != required_http_host {
-        return None;
-    }
-    if session_token.expires < current_timestamp {
-        return None;
-    }
-    Some(session_token)
-}
+struct CookieLoader(String);
 
-
-fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
-    let cookie_header_value = request_headers.get(COOKIE)?.to_str().ok()?;
-    if cookie_header_value.len() > 4096 {
-        return None;
+impl CookieLoader {
+    fn from_settings(settings: Arc<Settings>) -> Self {
+        Self(settings.cookie.clone())
     }
-    let raw_session_value =
-        {
-            let mut m_value = None;
-            for kv_pair in cookie_header_value.split("; ") {
-                if let Some((key, value)) = kv_pair.split_once('=') {
-                    if key == settings.cookie {
-                        m_value = Some(value);
-                        break;
-                    }
+
+    fn attempt_load(&self, request_headers: &HeaderMap) -> Option<String> {
+        let cookie_header_value = request_headers.get(COOKIE)?.to_str().ok()?;
+        if cookie_header_value.len() > 4096 {
+            return None;
+        }
+        let mut m_value = None;
+        for kv_pair in cookie_header_value.split("; ") {
+            if let Some((key, value)) = kv_pair.split_once('=') {
+                if self.0 == key {
+                    m_value = Some(value.to_owned());
+                    break;
                 }
             }
-            m_value?
-        };
-    let http_host = request_headers.get(HOST)?.to_str().ok()?;
-    load_session_token(&raw_session_value, &http_host, settings.signing_key.verifying_key())
+        }
+        m_value
+    }
+}
+
+fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
+    let cookie_value = CookieLoader::from_settings(settings.clone()).attempt_load(request_headers)?;
+    (SessionTokenLoader {
+        required_http_host: request_headers.get(HOST)?.to_str().ok()?,
+        verifying_key: settings.signing_key.verifying_key()
+    }).attempt_load(&cookie_value)
 }
 
 const SINGLE_SLASH: HeaderValue = HeaderValue::from_static("/");

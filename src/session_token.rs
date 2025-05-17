@@ -130,4 +130,27 @@ impl SessionToken {
     }
 }
 
+pub struct SessionTokenLoader<'a> {
+    pub required_http_host: &'a str,
+    pub verifying_key: VerifyingKey
+}
+
+impl<'a> SessionTokenLoader<'a> {
+    pub fn attempt_load(&self, encoded_token: &str) -> Option<SessionToken> {
+        let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
+        let text_session_token = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
+        let session_token: SessionToken = serde_json::from_slice(&text_session_token).ok()?;
+        if !session_token.verify(self.verifying_key) {
+            return None;
+        }
+        if session_token.host != self.required_http_host {
+            return None;
+        }
+        if session_token.expires < current_timestamp {
+            return None;
+        }
+        Some(session_token)
+    }
+}
+
 
