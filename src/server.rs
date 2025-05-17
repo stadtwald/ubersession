@@ -118,27 +118,27 @@ struct ServiceRequestBody {
     path: String
 }
 
-async fn handle_errors(m_response: anyhow::Result<Response>) -> Response {
+fn fold_errors(m_response: anyhow::Result<Response>) -> Response {
     match m_response {
         Ok(response) => response,
         Err(error) =>
             if error.is::<NotFound>() {
-                handle_404().await
+                build_404()
             } else if error.is::<InvalidRequest>() {
-                handle_400().await
+                build_400()
             } else {
-                handle_500().await
+                build_500()
             }
     }
 }
 
 
 async fn handle_get(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Query(query): Query<ServiceRequestParameters>) -> Response {
-    handle_errors(TransactionBuilder::new(settings).with_query(query).with_request_headers(request_headers).build_and_run().await).await
+    fold_errors(TransactionBuilder::new(settings).with_query(query).with_request_headers(request_headers).build_and_run().await)
 }
 
 async fn handle_post(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Form(body): Form<ServiceRequestBody>) -> Response {
-    handle_errors(TransactionBuilder::new(settings).with_request_headers(request_headers).with_body(body).build_and_run().await).await
+    fold_errors(TransactionBuilder::new(settings).with_request_headers(request_headers).with_body(body).build_and_run().await)
 }
 
 #[derive(Clone, Copy, Debug)]
