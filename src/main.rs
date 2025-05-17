@@ -2,6 +2,7 @@ mod cli;
 mod errors;
 mod wire;
 mod server;
+mod session_token;
 
 use clap::Parser;
 
