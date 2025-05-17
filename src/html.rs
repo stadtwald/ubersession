@@ -14,23 +14,34 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-mod cli;
-mod errors;
-mod html;
-mod server;
-mod session_token;
-mod wire;
+use std::fmt::{Display, Formatter, Write};
 
-use clap::Parser;
+pub struct HtmlEscapedText<'a>(&'a str);
 
-use crate::cli::{Cli, Command};
+impl<'a> HtmlEscapedText<'a> {
+    pub fn new(text: &'a str) -> Self {
+        Self(text)
+    }
+}
 
-fn main() -> anyhow::Result<()> {
-    let opts = Cli::parse();
-    match opts.command {
-        Command::GenerateKey(opts) => opts.run(),
-        Command::GetPublicKey(opts) => opts.run(),
-        Command::Serve(opts) => opts.run()
+impl<'a> Display for HtmlEscapedText<'a> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        for c in self.0.chars() {
+            if c == '&' {
+                formatter.write_str("&amp;")?;
+            } else if c == '<' {
+                formatter.write_str("&lt;")?;
+            } else if c == '>' {
+                formatter.write_str("&gt;")?;
+            } else if c == '"' {
+                formatter.write_str("&quot;")?;
+            } else if c == '\'' {
+                formatter.write_str("&#39;")?;
+            } else {
+                formatter.write_char(c)?;
+            }
+        }
+        Ok(())
     }
 }
 

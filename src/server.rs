@@ -31,6 +31,7 @@ use thiserror::Error;
 use tokio::net::TcpListener;
 
 use crate::errors::*;
+use crate::html::HtmlEscapedText;
 use crate::session_token::{SessionToken, SessionTokenLoader};
 
 #[derive(Clone, Debug)]
@@ -286,7 +287,7 @@ impl Transaction {
                         "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
                     )
                 };
-            let escaped_path = self.redir_path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+            let escaped_path = HtmlEscapedText::new(&self.redir_path);
             let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token, escaped_path, button));
             Ok(html.into_response())
         }
