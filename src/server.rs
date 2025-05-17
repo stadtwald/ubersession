@@ -25,10 +25,9 @@ use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::error::Error;
-use std::fmt::{Display, Formatter};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::net::TcpListener;
 
 use crate::errors::*;
@@ -156,27 +155,13 @@ async fn handle_post(request_headers: HeaderMap, Extension(settings): Extension<
     fold_errors(TransactionBuilder::new(settings).with_request_headers(request_headers).with_body(body).build_and_run().await)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Error)]
+#[error("Invalid HTTP request")]
 struct InvalidRequest;
 
-impl Error for InvalidRequest {}
-
-impl Display for InvalidRequest {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Invalid HTTP request")
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Error)]
+#[error("HTTP resource not found")]
 struct NotFound;
-
-impl Error for NotFound {}
-
-impl Display for NotFound {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("HTTP resource not found")
-    }
-}
 
 struct TransactionBuilder {
     settings: Arc<Settings>,
