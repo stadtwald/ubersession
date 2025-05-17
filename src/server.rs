@@ -278,17 +278,41 @@ impl Transaction {
             let encoded_session_token = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token)?.as_bytes());
 
             let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query)?);
-            let (button, styles) =
+
+            let button =
                 if self.settings.no_plain_html {
-                    ("", "")
+                    ""
                 } else {
-                    (
-                        "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>",
-                        "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
-                    )
+                    "<noscript>You don\'t appear to have JavaScript enabled. Please click the following button to proceed to the next page. <button>Proceed</button></noscript>"
                 };
+
+            let styles =
+                if self.settings.no_plain_html {
+                    ""
+                } else {
+                    "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
+                };
+
             let escaped_path = HtmlEscapedText::new(&self.redir_path);
-            let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token, escaped_path, button));
+            let html = Html(format!(
+                concat!(
+                    "<!DOCTYPE html><html><head><title>Redirecting to application</title>",
+                    "{additional_header_code}",
+                    "</head><body>",
+                    "<form method=\"post\" action=\"{action}\">",
+                    "<input type=\"hidden\" name=\"token\" value=\"{token}\">",
+                    "<input type=\"hidden\" name=\"path\" value=\"{path}\">",
+                    "{additional_form_code}",
+                    "</form>",
+                    "<script type=\"text/javascript\">document.querySelector('form').submit();</script>",
+                    "</body></html>"
+                ),
+                additional_header_code = styles,
+                action = uri,
+                token = encoded_session_token,
+                path = escaped_path,
+                additional_form_code = button
+            ));
             Ok(html.into_response())
         }
     }
