@@ -467,9 +467,8 @@ impl SessionToken {
 
 fn load_session_token(encoded_token: &str, required_http_host: &str, verifying_key: VerifyingKey) -> Option<SessionToken> {
     let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
-    let text_session_value = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
-    let session_token_descriptor: SessionToken = serde_json::from_slice(&text_session_value).ok()?;
-    let session_token: SessionToken = session_token_descriptor.try_into().ok()?;
+    let text_session_token = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
+    let session_token: SessionToken = serde_json::from_slice(&text_session_token).ok()?;
     if !session_token.verify(verifying_key) {
         return None;
     }
