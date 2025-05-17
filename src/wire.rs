@@ -1,7 +1,6 @@
 use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Clone)]
 #[derive(Deserialize, Serialize)]
@@ -33,16 +32,5 @@ pub struct PublicKey {
     pub public_key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>
-}
-
-#[derive(Clone)]
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "what", rename = "session_token")]
-pub struct SessionToken {
-    pub public_key: String,
-    pub signature: String,
-    pub host: String, // secured
-    pub expires: u32, // secured
-    pub id: Uuid // secured
 }
 

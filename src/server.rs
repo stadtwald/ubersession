@@ -9,6 +9,8 @@ use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
+use serde::de::{Deserializer, Visitor};
+use serde::ser::Serializer;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -259,9 +261,8 @@ impl Transaction {
                 current_session_token
             } else {
                 let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
-                let session_token_descriptor: crate::wire::SessionToken = session_token.clone().into();
-                let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token_descriptor).unwrap().as_bytes());
-                let cookie_value = format!("{}={}", self.settings.cookie, encoded_session_token_descriptor);
+                let encoded_session_token = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token)?.as_bytes());
+                let cookie_value = format!("{}={}", self.settings.cookie, encoded_session_token);
                 response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 session_token
             };
@@ -275,10 +276,9 @@ impl Transaction {
                 session_token.resign(&self.settings.signing_key);
                 session_token
             };
-            let session_token_descriptor: crate::wire::SessionToken = session_token.into();
-            let encoded_session_token_descriptor = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token_descriptor)?.as_bytes());
+            let encoded_session_token = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token)?.as_bytes());
 
-            let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query).unwrap());
+            let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query)?);
             let (button, styles) =
                 if self.settings.no_plain_html {
                     ("", "")
@@ -289,7 +289,7 @@ impl Transaction {
                     )
                 };
             let escaped_path = self.redir_path.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
-            let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token_descriptor, escaped_path, button));
+            let html = Html(format!("<!DOCTYPE html><html><head><title>Redirecting to application</title>{}</head><body><form method=\"post\" action=\"{}\"><input type=\"hidden\" name=\"token\" value=\"{}\"><input type=\"hidden\" name=\"path\" value=\"{}\">{}</form><script type=\"text/javascript\">document.querySelector('form').submit();</script></body></html>", styles, uri, encoded_session_token, escaped_path, button));
             Ok(html.into_response())
         }
     }
@@ -342,9 +342,86 @@ async fn set_cache_control(request: Request, next: Next) -> impl IntoResponse {
     (headers, response)
 }
 
+struct PublicKeyFromBase64Visitor;
+
+impl<'a> Visitor<'a> for PublicKeyFromBase64Visitor {
+    type Value = [u8; 32];
+
+    fn expecting(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("URL-safe base64-encoded ed25519 public key")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error {
+        use serde::de::Unexpected;
+
+        let public_key: Vec<u8> = BASE64URL_NOPAD.decode(value.as_bytes()).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
+        let public_key = public_key.as_slice().try_into().map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
+        Ok(public_key)
+    }
+}
+
+fn deserialize_public_key_from_base64<'a, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+    where
+        D: Deserializer<'a>
+{
+    deserializer.deserialize_str(PublicKeyFromBase64Visitor)
+}
+
+fn serialize_public_key_to_base64<S>(value: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+{
+    serializer.serialize_str(BASE64URL_NOPAD.encode(value).as_str())
+}
+
+struct SignatureFromBase64Visitor;
+
+impl<'a> Visitor<'a> for SignatureFromBase64Visitor {
+    type Value = Signature;
+
+    fn expecting(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("URL-safe base64-encoded ed25519 signature")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error {
+        use serde::de::Unexpected;
+
+        let signature_bytes: Vec<u8> = BASE64URL_NOPAD.decode(value.as_bytes()).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
+        let signature_bytes: [u8; 64] = signature_bytes.as_slice().try_into().map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
+        Ok(Signature::from_bytes(&signature_bytes))
+    }
+}
+
+fn deserialize_signature_from_base64<'a, D>(deserializer: D) -> Result<Signature, D::Error>
+    where
+        D: Deserializer<'a>
+{
+    deserializer.deserialize_str(SignatureFromBase64Visitor)
+}
+
+fn serialize_signature_to_base64<S>(value: &Signature, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer
+{
+    serializer.serialize_str(BASE64URL_NOPAD.encode(&value.to_bytes()).as_str())
+}
+
 #[derive(Clone, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct SessionToken {
+    #[serde(
+        deserialize_with = "deserialize_public_key_from_base64",
+        serialize_with = "serialize_public_key_to_base64"
+    )]
     pub public_key: [u8; 32],
+    #[serde(
+        deserialize_with = "deserialize_signature_from_base64",
+        serialize_with = "serialize_signature_to_base64"
+    )]
     pub signature: Signature,
     pub host: String, // secured
     pub expires: u32, // secured
@@ -388,39 +465,10 @@ impl SessionToken {
     }
 }
 
-impl From<SessionToken> for crate::wire::SessionToken {
-    fn from(token: SessionToken) -> crate::wire::SessionToken {
-        crate::wire::SessionToken {
-            public_key: BASE64URL_NOPAD.encode(&token.public_key),
-            signature: BASE64URL_NOPAD.encode(&token.signature.to_bytes()),
-            host: token.host,
-            expires: token.expires,
-            id: token.id
-        }
-    }
-}
-
-impl TryFrom<crate::wire::SessionToken> for SessionToken {
-    type Error = anyhow::Error;
-
-    fn try_from(wire: crate::wire::SessionToken) -> anyhow::Result<Self> {
-        let public_key: [u8; 32] = BASE64URL_NOPAD.decode(wire.public_key.as_bytes())?.as_slice().try_into()?;
-        let signature_bytes: [u8; 64] = BASE64URL_NOPAD.decode(wire.signature.as_bytes())?.as_slice().try_into()?;
-        let signature = Signature::from_bytes(&signature_bytes);
-        Ok(SessionToken {
-            public_key: public_key,
-            signature: signature,
-            host: wire.host,
-            expires: wire.expires,
-            id: wire.id
-        })
-    }
-}
-
 fn load_session_token(encoded_token: &str, required_http_host: &str, verifying_key: VerifyingKey) -> Option<SessionToken> {
     let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
     let text_session_value = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
-    let session_token_descriptor: crate::wire::SessionToken = serde_json::from_slice(&text_session_value).ok()?;
+    let session_token_descriptor: SessionToken = serde_json::from_slice(&text_session_value).ok()?;
     let session_token: SessionToken = session_token_descriptor.try_into().ok()?;
     if !session_token.verify(verifying_key) {
         return None;
