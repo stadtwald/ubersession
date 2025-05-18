@@ -17,9 +17,9 @@
 mod cli;
 mod errors;
 mod html;
+mod keypair;
 mod server;
 mod session_token;
-mod wire;
 
 use clap::Parser;
 

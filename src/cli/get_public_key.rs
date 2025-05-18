@@ -15,9 +15,10 @@
  */
 
 use clap::Args;
-use data_encoding::BASE64URL_NOPAD;
 use std::io::Read;
 use std::path::PathBuf;
+
+use crate::keypair::{Keypair, PublicKey};
 
 #[derive(Clone, Debug)]
 #[derive(Args)]
@@ -37,14 +38,14 @@ impl GetPublicKey {
                 std::io::stdin().read_to_end(&mut buf)?;
                 buf
             };
-        let keypair_description: crate::wire::Keypair = serde_json::from_slice(&raw_input)?;
-        let signing_key = keypair_description.try_loading_signing_key()?;
+        let keypair: Keypair = serde_json::from_slice(&raw_input)?;
+        let signing_key = keypair.private_key;
         let verifying_key = signing_key.verifying_key();
         let public_key_description =
-            crate::wire::PublicKey {
+            PublicKey {
                 algo: "ed25519".to_owned(),
-                public_key: BASE64URL_NOPAD.encode(verifying_key.as_bytes()),
-                comment: keypair_description.comment
+                public_key: *verifying_key.as_bytes(),
+                comment: keypair.comment
             };
         let public_key_description_encoded = serde_json::to_string_pretty(&public_key_description)?;
 

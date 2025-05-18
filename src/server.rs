@@ -32,6 +32,7 @@ use tokio::net::TcpListener;
 
 use crate::errors::*;
 use crate::html::HtmlEscapedText;
+use crate::keypair::Keypair;
 use crate::session_token::{SessionToken, SessionTokenLoader};
 
 #[derive(Clone, Debug)]
@@ -65,8 +66,8 @@ impl Server {
             Err(anyhow::anyhow!("URL prefix must start with a forward slash (/)"))
         } else {
             let raw_input = std::fs::read(&opts.private_key_file)?;
-            let keypair_description: crate::wire::Keypair = serde_json::from_slice(&raw_input)?;
-            let signing_key = keypair_description.try_loading_signing_key()?;
+            let keypair: Keypair = serde_json::from_slice(&raw_input)?;
+            let signing_key = keypair.private_key;
             
             if !url_prefix.ends_with('/') {
                 url_prefix.push('/');

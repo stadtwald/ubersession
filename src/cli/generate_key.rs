@@ -15,12 +15,13 @@
  */
 
 use clap::Args;
-use data_encoding::BASE64URL_NOPAD;
 use rand::rngs::OsRng;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
+
+use crate::keypair::{Keypair, PublicKey};
 
 #[derive(Clone, Debug)]
 #[derive(Args)]
@@ -45,22 +46,21 @@ pub struct GenerateKey {
 impl GenerateKey {
     pub fn run(self) -> anyhow::Result<()> {
         let signing_key = ed25519_dalek::SigningKey::generate(&mut OsRng);
-        let private_key = signing_key.as_bytes();
         let verifying_key = signing_key.verifying_key();
-        let keypair_description =
-            crate::wire::Keypair {
+        let keypair =
+            Keypair {
                 algo: "ed25519".to_owned(),
-                private_key: BASE64URL_NOPAD.encode(private_key),
+                private_key: signing_key,
                 comment: self.comment
             };
-        let keypair_description_encoded = serde_json::to_string_pretty(&keypair_description)?;
-        let public_key_description =
-            crate::wire::PublicKey {
+        let keypair_encoded = serde_json::to_string_pretty(&keypair)?;
+        let public_key =
+            PublicKey {
                 algo: "ed25519".to_owned(),
-                public_key: BASE64URL_NOPAD.encode(verifying_key.as_bytes()),
-                comment: keypair_description.comment
+                public_key: *verifying_key.as_bytes(),
+                comment: keypair.comment
             };
-        let public_key_description_encoded = serde_json::to_string_pretty(&public_key_description)?;
+        let public_key_encoded = serde_json::to_string_pretty(&public_key)?;
         let mut file =
             if self.force {
                 OpenOptions::new()
@@ -77,10 +77,10 @@ impl GenerateKey {
                     .open(&self.private_key_file)?
             };
 
-        file.write_all(&keypair_description_encoded.as_bytes())?;
+        file.write_all(&keypair_encoded.as_bytes())?;
 
         if !self.quiet {
-            println!("{}", public_key_description_encoded);
+            println!("{}", public_key_encoded);
         }
 
         Ok(())
