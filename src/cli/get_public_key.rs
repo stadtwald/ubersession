@@ -18,7 +18,7 @@ use clap::Args;
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::keypair::{Keypair, PublicKey};
+use crate::keypair::{Keypair, PublicKey, Ed25519SigningAlgo};
 
 #[derive(Clone, Debug)]
 #[derive(Args)]
@@ -43,7 +43,7 @@ impl GetPublicKey {
         let verifying_key = signing_key.verifying_key();
         let public_key_description =
             PublicKey {
-                algo: "ed25519".to_owned(),
+                algo: Ed25519SigningAlgo,
                 public_key: *verifying_key.as_bytes(),
                 comment: keypair.comment
             };

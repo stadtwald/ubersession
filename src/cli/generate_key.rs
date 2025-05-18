@@ -21,7 +21,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 
-use crate::keypair::{Keypair, PublicKey};
+use crate::keypair::{Keypair, PublicKey, Ed25519SigningAlgo};
 
 #[derive(Clone, Debug)]
 #[derive(Args)]
@@ -49,14 +49,14 @@ impl GenerateKey {
         let verifying_key = signing_key.verifying_key();
         let keypair =
             Keypair {
-                algo: "ed25519".to_owned(),
+                algo: Ed25519SigningAlgo,
                 private_key: signing_key,
                 comment: self.comment
             };
         let keypair_encoded = serde_json::to_string_pretty(&keypair)?;
         let public_key =
             PublicKey {
-                algo: "ed25519".to_owned(),
+                algo: Ed25519SigningAlgo,
                 public_key: *verifying_key.as_bytes(),
                 comment: keypair.comment
             };

@@ -19,7 +19,8 @@ use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 use serde::de::{Deserializer, Visitor};
 use serde::ser::Serializer;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
+use thiserror::Error;
 
 struct SigningKeyFromBase64Visitor;
 
@@ -89,12 +90,44 @@ fn serialize_public_key_to_base64<S>(value: &[u8; 32], serializer: S) -> Result<
     serializer.serialize_str(BASE64URL_NOPAD.encode(value).as_str())
 }
 
+#[derive(Clone, Copy, Debug, Error)]
+#[error("Signing algorithm must be ed25519")]
+pub struct InvalidSigningAlgoId;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Deserialize, Serialize)]
+#[serde(try_from = "&str", into = "&'static str")]
+pub struct Ed25519SigningAlgo;
+
+impl From<Ed25519SigningAlgo> for &'static str {
+    fn from(_value: Ed25519SigningAlgo) -> &'static str {
+        "ed25519"
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Ed25519SigningAlgo {
+    type Error = InvalidSigningAlgoId;
+
+    fn try_from(value: &'a str) -> Result<Self, InvalidSigningAlgoId> {
+        if value == "ed25519" {
+            Ok(Ed25519SigningAlgo)
+        } else {
+            Err(InvalidSigningAlgoId)
+        }
+    }
+}
+
+impl Display for Ed25519SigningAlgo {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ed25519")
+    }
+}
 
 #[derive(Clone)]
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "what", rename = "keypair")]
 pub struct Keypair {
-    pub algo: String,
+    pub algo: Ed25519SigningAlgo,
     #[serde(
         deserialize_with = "deserialize_signing_key_from_base64",
         serialize_with = "serialize_signing_key_to_base64"
@@ -108,7 +141,7 @@ pub struct Keypair {
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "what", rename = "public_key")]
 pub struct PublicKey {
-    pub algo: String,
+    pub algo: Ed25519SigningAlgo,
     #[serde(
         deserialize_with = "deserialize_public_key_from_base64",
         serialize_with = "serialize_public_key_to_base64"
