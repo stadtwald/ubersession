@@ -52,6 +52,7 @@ struct Settings {
     authority: String,
     hosts: HashSet<String>,
     cookie: String,
+    cookie_suffix: String,
     protocol: &'static str,
     url_prefix: String
 }
@@ -93,6 +94,13 @@ impl Server {
                 hosts.insert(host.trim().to_ascii_lowercase());
             }
 
+            let m_cookie_secure =
+                if opts.insecure_http {
+                    ""
+                } else {
+                    "; Secure"
+                };
+
             let settings = 
                 Settings {
                     signing_key: signing_key,
@@ -102,6 +110,7 @@ impl Server {
                     authority: authority,
                     hosts: hosts,
                     cookie: cookie.to_owned(),
+                    cookie_suffix: format!("; Max-Age=316224000{}", m_cookie_secure), // expire cookie in ten years
                     protocol: if opts.insecure_http { "http" } else { "https" },
                     url_prefix: url_prefix
                 };
@@ -265,7 +274,7 @@ impl Transaction {
                 let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
                 let encoded_session_token = serde_json::to_string(&session_token)?;
                 let escaped_encoded_session_token = percent_encode(encoded_session_token.as_bytes(), COOKIE_OCTET);
-                let cookie_value = format!("{}={}", self.settings.cookie, escaped_encoded_session_token);
+                let cookie_value = format!("{}={}{}", self.settings.cookie, escaped_encoded_session_token, self.settings.cookie_suffix);
                 response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 session_token
             };
@@ -330,7 +339,7 @@ impl Transaction {
             if let Some(new_session_token) = m_new_session_token {
                 let mut response_headers = HeaderMap::new();
                 if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
-                    let cookie_value = format!("{}={}", self.settings.cookie, percent_encode(body.token.as_bytes(), COOKIE_OCTET));
+                    let cookie_value = format!("{}={}{}", self.settings.cookie, percent_encode(body.token.as_bytes(), COOKIE_OCTET), self.settings.cookie_suffix);
                     response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 }
                 Ok((response_headers, redirect(&self.redir_path)).into_response())
