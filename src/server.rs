@@ -36,6 +36,7 @@ use crate::keypair::Keypair;
 use crate::session_token::{SessionToken, SessionTokenLoader};
 
 const COOKIE_OCTET: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b',').add(b';').add(b'\\');
+const TOKEN_OCTET: &AsciiSet = &CONTROLS.add(b' ').add(b'(').add(b')').add(b'<').add(b'>').add(b'@').add(b',').add(b';').add(b':').add(b'\\').add(b'"').add(b'/').add(b'[').add(b']').add(b'?').add(b'=').add(b'{').add(b'}');
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -109,7 +110,7 @@ impl Server {
                     no_plain_html: opts.no_plain_html,
                     authority: authority,
                     hosts: hosts,
-                    cookie: cookie.to_owned(),
+                    cookie: percent_encode(cookie.as_bytes(), TOKEN_OCTET).to_string(),
                     cookie_suffix: format!("; Max-Age=316224000{}", m_cookie_secure), // expire cookie in ten years
                     protocol: if opts.insecure_http { "http" } else { "https" },
                     url_prefix: url_prefix
