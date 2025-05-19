@@ -18,6 +18,7 @@ mod cli;
 mod errors;
 mod html;
 mod keypair;
+mod serde;
 mod server;
 mod session_token;
 

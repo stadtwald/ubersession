@@ -18,91 +18,14 @@ use chrono::Utc;
 use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use serde::de::{Deserializer, Visitor};
-use serde::ser::Serializer;
-use std::fmt::Formatter;
 use uuid::Uuid;
-
-struct PublicKeyFromBase64Visitor;
-
-impl<'a> Visitor<'a> for PublicKeyFromBase64Visitor {
-    type Value = [u8; 32];
-
-    fn expecting(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("URL-safe base64-encoded ed25519 public key")
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error {
-        use serde::de::Unexpected;
-
-        let public_key: Vec<u8> = BASE64URL_NOPAD.decode(value.as_bytes()).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
-        let public_key = public_key.as_slice().try_into().map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
-        Ok(public_key)
-    }
-}
-
-fn deserialize_public_key_from_base64<'a, D>(deserializer: D) -> Result<[u8; 32], D::Error>
-    where
-        D: Deserializer<'a>
-{
-    deserializer.deserialize_str(PublicKeyFromBase64Visitor)
-}
-
-fn serialize_public_key_to_base64<S>(value: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer
-{
-    serializer.serialize_str(BASE64URL_NOPAD.encode(value).as_str())
-}
-
-struct SignatureFromBase64Visitor;
-
-impl<'a> Visitor<'a> for SignatureFromBase64Visitor {
-    type Value = Signature;
-
-    fn expecting(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("URL-safe base64-encoded ed25519 signature")
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error {
-        use serde::de::Unexpected;
-
-        let signature_bytes: Vec<u8> = BASE64URL_NOPAD.decode(value.as_bytes()).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
-        let signature_bytes: [u8; 64] = signature_bytes.as_slice().try_into().map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
-        Ok(Signature::from_bytes(&signature_bytes))
-    }
-}
-
-fn deserialize_signature_from_base64<'a, D>(deserializer: D) -> Result<Signature, D::Error>
-    where
-        D: Deserializer<'a>
-{
-    deserializer.deserialize_str(SignatureFromBase64Visitor)
-}
-
-fn serialize_signature_to_base64<S>(value: &Signature, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer
-{
-    serializer.serialize_str(BASE64URL_NOPAD.encode(&value.to_bytes()).as_str())
-}
 
 #[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
 pub struct SessionToken {
-    #[serde(
-        deserialize_with = "deserialize_public_key_from_base64",
-        serialize_with = "serialize_public_key_to_base64"
-    )]
+    #[serde(with = "crate::serde::public_key")]
     pub public_key: [u8; 32],
-    #[serde(
-        deserialize_with = "deserialize_signature_from_base64",
-        serialize_with = "serialize_signature_to_base64"
-    )]
+    #[serde(with = "crate::serde::signature")]
     pub signature: Signature,
     pub host: String, // secured
     pub expires: u32, // secured
