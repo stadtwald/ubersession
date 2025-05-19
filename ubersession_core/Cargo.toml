@@ -5,6 +5,8 @@ authors = ['William Demchick <william.demchick@gmail.com>']
 license = "ISC"
 edition = '2024'
 description = 'A simple mechanism for cross-domain WWW session establishment - core data structures'
+repository = 'https://github.com/stadtwald/ubersession'
+license = 'ISC'
 
 [dependencies.chrono]
 version = '0.4.40'
