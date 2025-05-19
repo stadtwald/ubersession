@@ -17,12 +17,11 @@
 mod cli;
 mod errors;
 mod html;
-mod keypair;
-mod serde;
 mod server;
-mod session_token;
 
 use clap::Parser;
+pub use ubersession_core::keypair;
+pub use ubersession_core::session_token;
 
 use crate::cli::{Cli, Command};
 

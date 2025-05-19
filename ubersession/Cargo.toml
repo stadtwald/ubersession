@@ -54,6 +54,10 @@ version = "2.0.12"
 version = '1.44.2'
 features = ['full']
 
+[dependencies.ubersession_core]
+version = '0.1.0'
+path = '../ubersession_core'
+
 [dependencies.uuid]
 version = '1.16.0'
 features = ['serde', 'v4']

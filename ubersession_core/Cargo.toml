@@ -1,0 +1,32 @@
+[package]
+name = 'ubersession_core'
+version = '0.1.0'
+authors = ['William Demchick <william.demchick@gmail.com>']
+license = "ISC"
+edition = '2024'
+description = 'A simple mechanism for cross-domain WWW session establishment - core data structures'
+
+[dependencies.chrono]
+version = '0.4.40'
+
+[dependencies.data-encoding]
+version = '2.9.0'
+
+[dependencies.ed25519-dalek]
+version = '2.1.1'
+features = ['pem', 'rand_core']
+
+[dependencies.serde]
+version = '1.0.219'
+features = ['derive']
+
+[dependencies.serde_json]
+version = '1.0.140'
+
+[dependencies.thiserror]
+version = "2.0.12"
+
+[dependencies.uuid]
+version = '1.16.0'
+features = ['serde', 'v4']
+
