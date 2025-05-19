@@ -21,8 +21,8 @@ use axum::http::status::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::SigningKey;
+use percent_encoding::{percent_decode_str, percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -261,8 +261,9 @@ impl Transaction {
                 current_session_token
             } else {
                 let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
-                let encoded_session_token = BASE64URL_NOPAD.encode(serde_json::to_string(&session_token)?.as_bytes());
-                let cookie_value = format!("{}={}", self.settings.cookie, encoded_session_token);
+                let encoded_session_token = serde_json::to_string(&session_token)?;
+                let escaped_encoded_session_token = percent_encode(encoded_session_token.as_bytes(), NON_ALPHANUMERIC);
+                let cookie_value = format!("{}={}", self.settings.cookie, escaped_encoded_session_token);
                 response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 session_token
             };
@@ -276,7 +277,7 @@ impl Transaction {
                 session_token.resign(&self.settings.signing_key);
                 session_token
             };
-            let encoded_session_token = BASE64URL_NOPAD.encode(&serde_json::to_string(&session_token)?.as_bytes());
+            let encoded_session_token = &serde_json::to_string(&session_token)?;
 
             let uri = format!("{}://{}{}flow?{}", self.settings.protocol, self.for_host, self.settings.url_prefix, serde_urlencoded::to_string(&self.query)?);
 
@@ -295,6 +296,7 @@ impl Transaction {
                 };
 
             let escaped_path = HtmlEscapedText::new(&self.redir_path);
+            let escaped_encoded_session_token = HtmlEscapedText::new(&encoded_session_token);
             let html = Html(format!(
                 concat!(
                     "<!DOCTYPE html><html><head><title>Redirecting to application</title>",
@@ -310,7 +312,7 @@ impl Transaction {
                 ),
                 additional_header_code = styles,
                 action = uri,
-                token = encoded_session_token,
+                token = escaped_encoded_session_token,
                 path = escaped_path,
                 additional_form_code = button
             ));
@@ -326,7 +328,7 @@ impl Transaction {
             if let Some(new_session_token) = m_new_session_token {
                 let mut response_headers = HeaderMap::new();
                 if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
-                    let cookie_value = format!("{}={}", self.settings.cookie, body.token);
+                    let cookie_value = format!("{}={}", self.settings.cookie, percent_encode(body.token.as_bytes(), NON_ALPHANUMERIC));
                     response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 }
                 Ok((response_headers, redirect(&self.redir_path)).into_response())
@@ -383,7 +385,7 @@ impl CookieLoader {
         for kv_pair in cookie_header_value.split("; ") {
             if let Some((key, value)) = kv_pair.split_once('=') {
                 if self.0 == key {
-                    m_value = Some(value.to_owned());
+                    m_value = percent_decode_str(value).decode_utf8().ok().map(|x| x.into_owned());
                     break;
                 }
             }

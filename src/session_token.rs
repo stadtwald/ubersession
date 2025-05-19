@@ -15,7 +15,6 @@
  */
 
 use chrono::Utc;
-use data_encoding::BASE64URL_NOPAD;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -77,8 +76,7 @@ pub struct SessionTokenLoader<'a> {
 impl<'a> SessionTokenLoader<'a> {
     pub fn attempt_load(&self, encoded_token: &str) -> Option<SessionToken> {
         let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
-        let text_session_token = BASE64URL_NOPAD.decode(encoded_token.as_bytes()).ok()?;
-        let session_token: SessionToken = serde_json::from_slice(&text_session_token).ok()?;
+        let session_token: SessionToken = serde_json::from_str(&encoded_token).ok()?;
         if !session_token.verify(self.verifying_key) {
             return None;
         }
