@@ -1,4 +1,4 @@
-use data_encoding::BASE64URL_NOPAD;
+use data_encoding::BASE64;
 use serde::de::Visitor;
 use std::fmt::Formatter;
 use std::marker::PhantomData;
@@ -31,7 +31,7 @@ impl<'a, T> Visitor<'a> for FromBase64Visitor<T>
             E: serde::de::Error {
         use serde::de::Unexpected;
 
-        let bytes: Vec<u8> = BASE64URL_NOPAD.decode(value.as_bytes()).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
+        let bytes: Vec<u8> = BASE64.decode(value.as_bytes()).map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?;
         Ok(bytes.as_slice().try_into().map_err(|_| E::invalid_value(Unexpected::Str(value), &self))?)
     }
 }
