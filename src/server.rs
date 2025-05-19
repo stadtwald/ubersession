@@ -22,7 +22,7 @@ use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use ed25519_dalek::SigningKey;
-use percent_encoding::{percent_decode_str, percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{percent_decode_str, percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -34,6 +34,8 @@ use crate::errors::*;
 use crate::html::HtmlEscapedText;
 use crate::keypair::Keypair;
 use crate::session_token::{SessionToken, SessionTokenLoader};
+
+const COOKIE_OCTET: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b',').add(b';').add(b'\\');
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -262,7 +264,7 @@ impl Transaction {
             } else {
                 let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
                 let encoded_session_token = serde_json::to_string(&session_token)?;
-                let escaped_encoded_session_token = percent_encode(encoded_session_token.as_bytes(), NON_ALPHANUMERIC);
+                let escaped_encoded_session_token = percent_encode(encoded_session_token.as_bytes(), COOKIE_OCTET);
                 let cookie_value = format!("{}={}", self.settings.cookie, escaped_encoded_session_token);
                 response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 session_token
@@ -328,7 +330,7 @@ impl Transaction {
             if let Some(new_session_token) = m_new_session_token {
                 let mut response_headers = HeaderMap::new();
                 if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
-                    let cookie_value = format!("{}={}", self.settings.cookie, percent_encode(body.token.as_bytes(), NON_ALPHANUMERIC));
+                    let cookie_value = format!("{}={}", self.settings.cookie, percent_encode(body.token.as_bytes(), COOKIE_OCTET));
                     response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
                 }
                 Ok((response_headers, redirect(&self.redir_path)).into_response())
