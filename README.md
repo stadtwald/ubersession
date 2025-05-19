@@ -12,7 +12,7 @@ The ubersession server publishes a single HTTP endpoint that is used in the sess
 
 One domain name is specified as the "authority".  As the workflow progresses, a session token is first generated and stored as a cookie under the authority domain.  Then, tokens specifying the same session ID are replicated to other participating domains as necessary.
 
-When a shared session is being initialised for the first time, the ubersession server generates a random UUID to serve as the session ID.  It then signs this along with an expiry timestamp and a domain name.  The result is a bearer token which authorises the holder to act in that session under the specified domain.  (This means that you can allow untrusted web apps to participate in the shared session.  Reverse proxies used must still be trusted by default, but this canbe changed by specifying "host restrictions" using the `--host-restrictions-file` option.)
+When a shared session is being initialised for the first time, the ubersession server generates a random UUID to serve as the session ID.  It then signs this along with an expiry timestamp and a domain name.  The result is a bearer token which authorises the holder to act in that session under the specified domain.  (This means that you can allow untrusted web apps to participate in the shared session.)
 
 When a web app wishes to determine what session it is a part of, it looks up the token in the cookies sent to it, parses the token, and validates it.  Note that the web app must do the validation itself; it should never blindly trust that a token is valid.  Tokens are constructed to be easy to validate in most popular programming languages.
 

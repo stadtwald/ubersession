@@ -16,7 +16,6 @@
 
 mod cli;
 mod errors;
-mod host_restrictions;
 mod html;
 mod keypair;
 mod serde;

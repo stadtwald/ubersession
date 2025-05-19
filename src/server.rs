@@ -15,7 +15,7 @@
  */
 
 use axum::{Extension, Form, Router, serve};
-use axum::extract::{ConnectInfo, Query, Request};
+use axum::extract::{Query, Request};
 use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, COOKIE, HOST, LOCATION, SET_COOKIE};
 use axum::http::status::StatusCode;
 use axum::middleware::Next;
@@ -24,14 +24,13 @@ use axum::routing::get;
 use ed25519_dalek::SigningKey;
 use percent_encoding::{percent_decode_str, percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::net::TcpListener;
 
 use crate::errors::*;
-use crate::host_restrictions::HostRestrictions;
 use crate::html::HtmlEscapedText;
 use crate::keypair::Keypair;
 use crate::session_token::{SessionToken, SessionTokenLoader};
@@ -53,7 +52,6 @@ struct Settings {
     no_plain_html: bool,
     authority: String,
     hosts: HashSet<String>,
-    host_restrictions: HashMap<String, HostRestrictions>,
     cookie: String,
     cookie_suffix: String,
     protocol: &'static str,
@@ -71,15 +69,9 @@ impl Server {
         } else if !url_prefix.starts_with('/') {
             Err(anyhow::anyhow!("URL prefix must start with a forward slash (/)"))
         } else {
-            let keypair: Keypair = serde_json::from_slice(std::fs::read(&opts.private_key_file)?.as_slice())?;
+            let raw_input = std::fs::read(&opts.private_key_file)?;
+            let keypair: Keypair = serde_json::from_slice(&raw_input)?;
             let signing_key = keypair.private_key;
-
-            let host_restrictions =
-                if let Some(ref host_restrictions_file) = opts.host_restrictions_file {
-                    serde_json::from_slice(std::fs::read(host_restrictions_file)?.as_slice())?
-                } else {
-                    HashMap::new()
-                };
             
             if !url_prefix.ends_with('/') {
                 url_prefix.push('/');
@@ -118,7 +110,6 @@ impl Server {
                     no_plain_html: opts.no_plain_html,
                     authority: authority,
                     hosts: hosts,
-                    host_restrictions: host_restrictions,
                     cookie: percent_encode(cookie.as_bytes(), TOKEN_OCTET).to_string(),
                     cookie_suffix: format!("; Max-Age=316224000{}", m_cookie_secure), // expire cookie in ten years
                     protocol: if opts.insecure_http { "http" } else { "https" },
@@ -137,7 +128,7 @@ impl Server {
 
     pub async fn serve(self) -> anyhow::Result<()> {
         let listener = TcpListener::bind(self.listen).await?;
-        serve(listener, self.router.into_make_service_with_connect_info::<SocketAddr>()).await?;
+        serve(listener, self.router).await?;
         Ok(())
     }
 }
@@ -170,12 +161,12 @@ fn fold_errors(m_response: anyhow::Result<Response>) -> Response {
 }
 
 
-async fn handle_get(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Query(query): Query<ServiceRequestParameters>, ConnectInfo(remote_address): ConnectInfo<SocketAddr>) -> Response {
-    fold_errors(TransactionBuilder::new(settings).with_query(query).with_request_headers(request_headers).with_remote_address(remote_address).build_and_run().await)
+async fn handle_get(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Query(query): Query<ServiceRequestParameters>) -> Response {
+    fold_errors(TransactionBuilder::new(settings).with_query(query).with_request_headers(request_headers).build_and_run().await)
 }
 
-async fn handle_post(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, ConnectInfo(remote_address): ConnectInfo<SocketAddr>, Form(body): Form<ServiceRequestBody>) -> Response {
-    fold_errors(TransactionBuilder::new(settings).with_request_headers(request_headers).with_body(body).with_remote_address(remote_address).build_and_run().await)
+async fn handle_post(request_headers: HeaderMap, Extension(settings): Extension<Arc<Settings>>, Form(body): Form<ServiceRequestBody>) -> Response {
+    fold_errors(TransactionBuilder::new(settings).with_request_headers(request_headers).with_body(body).build_and_run().await)
 }
 
 #[derive(Clone, Copy, Debug, Error)]
@@ -190,8 +181,7 @@ struct TransactionBuilder {
     settings: Arc<Settings>,
     query: ServiceRequestParameters,
     request_headers: HeaderMap,
-    body: Option<ServiceRequestBody>,
-    remote_address: Option<SocketAddr>
+    body: Option<ServiceRequestBody>
 }
 
 impl TransactionBuilder {
@@ -203,8 +193,7 @@ impl TransactionBuilder {
                 path: None
             },
             request_headers: HeaderMap::new(),
-            body: None,
-            remote_address: None
+            body: None
         }
     }
 
@@ -220,11 +209,6 @@ impl TransactionBuilder {
 
     fn with_query(mut self, query: ServiceRequestParameters) -> Self {
         self.query = query;
-        self
-    }
-
-    fn with_remote_address(mut self, remote_address: SocketAddr) -> Self {
-        self.remote_address = Some(remote_address);
         self
     }
 
@@ -265,8 +249,7 @@ impl TransactionBuilder {
             http_host: http_host,
             for_host: for_host,
             redir_path: redir_path,
-            body: self.body,
-            remote_address: self.remote_address
+            body: self.body
         })
     }
 }
@@ -278,8 +261,7 @@ struct Transaction {
     http_host: String,
     for_host: String,
     redir_path: String,
-    body: Option<ServiceRequestBody>,
-    remote_address: Option<SocketAddr>
+    body: Option<ServiceRequestBody>
 }
 
 impl Transaction {
@@ -380,15 +362,6 @@ impl Transaction {
     }
 
     async fn run(self) -> anyhow::Result<Response> {
-        if let Some(host_restrictions) = self.settings.host_restrictions.get(&self.http_host) {
-            if let Some(ref remote_address) = self.remote_address {
-                if host_restrictions.evaluate(remote_address.ip(), &self.request_headers).is_denied() {
-                    return Err(InvalidRequest.into());
-                }
-            } else {
-                return Err(InvalidRequest.into());
-            }
-        }
         if self.settings.authority == self.http_host {
             self.authority().await
         } else if self.settings.hosts.contains(&self.http_host) && self.query.for_host.as_deref().map_or(true, |x| x == self.http_host) {

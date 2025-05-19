@@ -31,10 +31,6 @@ pub struct Serve {
     #[arg(short = 'k', long, env = "UBERSESSION_PRIVATE_KEY_FILE")]
     pub private_key_file: PathBuf,
 
-    /// Where to load host restrictions from
-    #[arg(long)]
-    pub host_restrictions_file: Option<PathBuf>,
-
     /// How long normal tokens last before being considered expired, in seconds
     #[arg(long, default_value_t = 366 * 86400)]
     pub token_expiry: u32,
