@@ -1096,8 +1096,6 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
- "data-encoding",
- "ed25519",
  "ed25519-dalek",
  "percent-encoding",
  "rand",
@@ -1107,7 +1105,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "ubersession_core",
- "uuid",
 ]
 
 [[package]]
@@ -1119,6 +1116,7 @@ dependencies = [
  "ed25519-dalek",
  "serde",
  "serde_json",
+ "thiserror",
  "uuid",
 ]
 
