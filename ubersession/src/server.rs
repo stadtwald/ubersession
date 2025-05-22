@@ -16,7 +16,7 @@
 
 use axum::{Extension, Form, Router, serve};
 use axum::extract::{Query, Request};
-use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, HOST, LOCATION, SET_COOKIE};
+use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, LOCATION, SET_COOKIE};
 use axum::http::status::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
@@ -29,6 +29,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::net::TcpListener;
 use ubersession_core::cookie::*;
+use ubersession_core::host_name::{HostName, HostNameSource};
 
 use crate::errors::*;
 use crate::html::HtmlEscapedText;
@@ -47,8 +48,8 @@ struct Settings {
     token_expiry: u32,
     verbose_workflow: bool,
     no_plain_html: bool,
-    authority: String,
-    hosts: HashSet<String>,
+    authority: HostName,
+    hosts: HashSet<HostName>,
     cookie: CookieName,
     cookie_options: CookieOptions,
     protocol: &'static str,
@@ -83,12 +84,12 @@ impl Server {
             router = router.fallback(handle_404);
             router = router.method_not_allowed_fallback(handle_400);
 
-            let authority = opts.authority.trim().to_ascii_lowercase();
+            let authority = opts.authority;
             let mut hosts = HashSet::new();
             hosts.insert(authority.clone());
 
             for host in opts.hosts {
-                hosts.insert(host.trim().to_ascii_lowercase());
+                hosts.insert(host);
             }
 
             let cookie_options = CookieOptions::default().with_max_age(316224000); // expire cookie in ten years
@@ -134,8 +135,14 @@ impl Server {
 #[derive(Deserialize, Serialize)]
 struct ServiceRequestParameters {
     #[serde(rename = "for")]
-    for_host: Option<String>,
+    for_host: Option<HostName>,
     path: Option<String>
+}
+
+impl HostNameSource for ServiceRequestParameters {
+    fn extract_host_name(&self) -> Option<HostName> {
+        self.for_host.clone()
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -215,14 +222,9 @@ impl TransactionBuilder {
     }
 
     fn build(self) -> anyhow::Result<Transaction> {
-        let http_host =
-            if let Some(http_host) = self.request_headers.get(HOST).and_then(|x| x.to_str().ok()) {
-                http_host.to_owned()
-            } else {
-                Err(InvalidRequest)?
-            };
+        let http_host = self.request_headers.extract_host_name().ok_or_else(|| InvalidRequest)?;
 
-        let for_host = self.query.for_host.as_deref().unwrap_or(http_host.as_str()).to_owned();
+        let for_host = self.query.extract_host_name().unwrap_or_else(|| http_host.clone());
 
         let redir_path = {
             let candidate_path =
@@ -256,8 +258,8 @@ struct Transaction {
     settings: Arc<Settings>,
     request_headers: HeaderMap,
     query: ServiceRequestParameters,
-    http_host: String,
-    for_host: String,
+    http_host: HostName,
+    for_host: HostName,
     redir_path: String,
     body: Option<ServiceRequestBody>
 }
@@ -333,7 +335,7 @@ impl Transaction {
         let m_current_session_token = load_current_session_token(self.settings.clone(), &self.request_headers);
            
         if let Some(ref body) = self.body {
-            let m_new_session_token = (SessionTokenLoader { required_http_host: &self.http_host, verifying_key: self.settings.signing_key.verifying_key() }).attempt_load(&body.token);
+            let m_new_session_token = (SessionTokenLoader { required_http_host: self.http_host.clone(), verifying_key: self.settings.signing_key.verifying_key() }).attempt_load(&body.token);
             if let Some(new_session_token) = m_new_session_token {
                 let mut response_headers = HeaderMap::new();
                 if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
@@ -361,7 +363,7 @@ impl Transaction {
     async fn run(self) -> anyhow::Result<Response> {
         if self.settings.authority == self.http_host {
             self.authority().await
-        } else if self.settings.hosts.contains(&self.http_host) && self.query.for_host.as_deref().map_or(true, |x| x == self.http_host) {
+        } else if self.settings.hosts.contains(&self.http_host) && self.query.for_host.as_ref().map_or(true, |x| x == &self.http_host) {
             self.app().await
         } else {
             Err(NotFound)?
@@ -381,7 +383,7 @@ async fn set_cache_control(request: Request, next: Next) -> impl IntoResponse {
 fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
     let cookie_value = request_headers.extract_cookie(&settings.cookie)?.unescape_str().ok()?;
     (SessionTokenLoader {
-        required_http_host: request_headers.get(HOST)?.to_str().ok()?,
+        required_http_host: request_headers.extract_host_name()?,
         verifying_key: settings.signing_key.verifying_key()
     }).attempt_load(&cookie_value)
 }

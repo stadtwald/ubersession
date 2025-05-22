@@ -19,6 +19,8 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::host_name::HostName;
+
 #[derive(Clone, Debug)]
 #[derive(Deserialize, Serialize)]
 pub struct SessionToken {
@@ -26,13 +28,13 @@ pub struct SessionToken {
     pub public_key: [u8; 32],
     #[serde(with = "crate::serde::signature")]
     pub signature: Signature,
-    pub host: String, // secured
+    pub host: HostName, // secured
     pub expires: u32, // secured
     pub id: Uuid // secured
 }
 
 impl SessionToken {
-    pub fn new(signing_key: &SigningKey, ttl: u32, host: String) -> Self {
+    pub fn new(signing_key: &SigningKey, ttl: u32, host: HostName) -> Self {
         let current_timestamp = Utc::now().timestamp().try_into().unwrap_or(u32::MAX);
         let expiry_timestamp = current_timestamp.saturating_add(ttl);
         let mut session_token =
@@ -53,12 +55,12 @@ impl SessionToken {
     }
 
     fn signable_message(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(9 + 16 + 4 + self.host.len());
+        let mut buf = Vec::with_capacity(9 + 16 + 4 + self.host.as_str().len());
         buf.extend("UBERSESS".as_bytes());
         buf.push(0);
         buf.extend(&self.expires.to_be_bytes());
         buf.extend(self.id.as_bytes());
-        buf.extend(self.host.as_bytes());
+        buf.extend(self.host.as_str().as_bytes());
         buf
     }
 
@@ -68,12 +70,12 @@ impl SessionToken {
     }
 }
 
-pub struct SessionTokenLoader<'a> {
-    pub required_http_host: &'a str,
+pub struct SessionTokenLoader {
+    pub required_http_host: HostName,
     pub verifying_key: VerifyingKey
 }
 
-impl<'a> SessionTokenLoader<'a> {
+impl SessionTokenLoader {
     pub fn attempt_load(&self, encoded_token: &str) -> Option<SessionToken> {
         let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
         let session_token: SessionToken = serde_json::from_str(&encoded_token).ok()?;

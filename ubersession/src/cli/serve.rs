@@ -17,6 +17,7 @@
 use clap::Args;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use ubersession_core::host_name::HostName;
 
 use crate::server::Server;
 
@@ -53,11 +54,11 @@ pub struct Serve {
 
     /// Domain to use for managing authoritative session state
     #[arg(long, short = 'a')]
-    pub authority: String,
+    pub authority: HostName,
 
     /// Domain to propogate session to
     #[arg(long = "host", short = 'd')]
-    pub hosts: Vec<String>,
+    pub hosts: Vec<HostName>,
 
     /// Cookie to store session tokens in
     #[arg(long, default_value = "UBERSESSION")]
