@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use http::header::{HeaderMap, HeaderName, HeaderValue, COOKIE};
+use http::header::{HeaderMap, COOKIE};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use std::fmt::{Display, Formatter, Write};
 
