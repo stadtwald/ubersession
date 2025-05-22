@@ -23,7 +23,7 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
@@ -50,6 +50,7 @@ struct Settings {
     no_plain_html: bool,
     authority: HostName,
     hosts: HashSet<HostName>,
+    host_ports: HashMap<HostName, u16>,
     cookie: CookieName,
     cookie_options: CookieOptions,
     protocol: &'static str,
@@ -92,6 +93,17 @@ impl Server {
                 hosts.insert(host);
             }
 
+            let mut host_ports = HashMap::new();
+
+            for host_port in opts.host_ports {
+                if hosts.contains(host_port.host_name()) {
+                    let (host_name, port) = host_port.clone().into_parts();
+                    host_ports.insert(host_name, port);
+                } else {
+                    return Err(anyhow::anyhow!("Port provided for host, but host not specified using --host"));
+                }
+            }
+
             let cookie_options = CookieOptions::default().with_max_age(316224000); // expire cookie in ten years
 
             let cookie_options =
@@ -109,6 +121,7 @@ impl Server {
                     no_plain_html: opts.no_plain_html,
                     authority: authority,
                     hosts: hosts,
+                    host_ports: host_ports,
                     cookie: CookieName::escape_str(&opts.cookie),
                     cookie_options: cookie_options,
                     protocol: if opts.insecure_http { "http" } else { "https" },

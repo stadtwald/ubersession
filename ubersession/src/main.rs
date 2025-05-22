@@ -16,6 +16,7 @@
 
 mod cli;
 mod errors;
+mod host_name_and_port;
 mod html;
 mod server;
 

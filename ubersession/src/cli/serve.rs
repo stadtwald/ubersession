@@ -19,6 +19,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use ubersession_core::host_name::HostName;
 
+use crate::host_name_and_port::HostNameAndPort;
 use crate::server::Server;
 
 #[derive(Clone, Debug)]
@@ -59,6 +60,10 @@ pub struct Serve {
     /// Domain to propogate session to
     #[arg(long = "host", short = 'd')]
     pub hosts: Vec<HostName>,
+
+    /// Non-standard ports to use for hosts
+    #[arg(long = "host-port")]
+    pub host_ports: Vec<HostNameAndPort>,
 
     /// Cookie to store session tokens in
     #[arg(long, default_value = "UBERSESSION")]
