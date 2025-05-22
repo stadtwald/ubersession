@@ -87,6 +87,7 @@ impl AsRef<str> for CookieValue {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CookieOptions {
     secure: bool,
     max_age: Option<i32>,
@@ -131,6 +132,7 @@ impl Display for CookieOptions {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SetCookie {
     name: CookieName,
     value: CookieValue,
