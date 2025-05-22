@@ -16,27 +16,24 @@
 
 use axum::{Extension, Form, Router, serve};
 use axum::extract::{Query, Request};
-use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, COOKIE, HOST, LOCATION, SET_COOKIE};
+use axum::http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, HOST, LOCATION, SET_COOKIE};
 use axum::http::status::StatusCode;
 use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use ed25519_dalek::SigningKey;
-use percent_encoding::{percent_decode_str, percent_encode, AsciiSet, CONTROLS};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::net::TcpListener;
+use ubersession_core::cookie::*;
 
 use crate::errors::*;
 use crate::html::HtmlEscapedText;
 use crate::keypair::Keypair;
 use crate::session_token::{SessionToken, SessionTokenLoader};
-
-const COOKIE_OCTET: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b',').add(b';').add(b'\\');
-const TOKEN_OCTET: &AsciiSet = &CONTROLS.add(b' ').add(b'(').add(b')').add(b'<').add(b'>').add(b'@').add(b',').add(b';').add(b':').add(b'\\').add(b'"').add(b'/').add(b'[').add(b']').add(b'?').add(b'=').add(b'{').add(b'}');
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -52,26 +49,25 @@ struct Settings {
     no_plain_html: bool,
     authority: String,
     hosts: HashSet<String>,
-    cookie: String,
-    cookie_suffix: String,
+    cookie: CookieName,
+    cookie_options: CookieOptions,
     protocol: &'static str,
     url_prefix: String
 }
 
 impl Server {
     pub fn try_init_from_serve_opts(opts: crate::cli::serve::Serve) -> anyhow::Result<Self> {
-        let cookie = opts.cookie.trim();
-        let mut url_prefix = opts.url_prefix.trim().to_owned();
         if opts.token_expiry < 60 {
             Err(anyhow::anyhow!("Token expiry must be at least a minute"))
-        } else if cookie.len() < 1 {
+        } else if opts.cookie.len() < 1 {
             Err(anyhow::anyhow!("Cookie name must not be empty"))
-        } else if !url_prefix.starts_with('/') {
+        } else if !opts.url_prefix.starts_with('/') {
             Err(anyhow::anyhow!("URL prefix must start with a forward slash (/)"))
         } else {
             let raw_input = std::fs::read(&opts.private_key_file)?;
             let keypair: Keypair = serde_json::from_slice(&raw_input)?;
             let signing_key = keypair.private_key;
+            let mut url_prefix = opts.url_prefix.to_owned();
             
             if !url_prefix.ends_with('/') {
                 url_prefix.push('/');
@@ -95,11 +91,13 @@ impl Server {
                 hosts.insert(host.trim().to_ascii_lowercase());
             }
 
-            let m_cookie_secure =
+            let cookie_options = CookieOptions::default().with_max_age(316224000); // expire cookie in ten years
+
+            let cookie_options =
                 if opts.insecure_http {
-                    ""
+                    cookie_options
                 } else {
-                    "; Secure"
+                    cookie_options.secure()
                 };
 
             let settings = 
@@ -110,8 +108,8 @@ impl Server {
                     no_plain_html: opts.no_plain_html,
                     authority: authority,
                     hosts: hosts,
-                    cookie: percent_encode(cookie.as_bytes(), TOKEN_OCTET).to_string(),
-                    cookie_suffix: format!("; Max-Age=316224000{}", m_cookie_secure), // expire cookie in ten years
+                    cookie: CookieName::escape_str(&opts.cookie),
+                    cookie_options: cookie_options,
                     protocol: if opts.insecure_http { "http" } else { "https" },
                     url_prefix: url_prefix
                 };
@@ -274,9 +272,8 @@ impl Transaction {
             } else {
                 let session_token = SessionToken::new(&self.settings.signing_key, self.settings.token_expiry, self.settings.authority.clone());
                 let encoded_session_token = serde_json::to_string(&session_token)?;
-                let escaped_encoded_session_token = percent_encode(encoded_session_token.as_bytes(), COOKIE_OCTET);
-                let cookie_value = format!("{}={}{}", self.settings.cookie, escaped_encoded_session_token, self.settings.cookie_suffix);
-                response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                let set_cookie = SetCookie::new(self.settings.cookie.clone(), CookieValue::escape_str(&encoded_session_token)).with_options(self.settings.cookie_options.clone()).to_string();
+                response_headers.insert(SET_COOKIE, HeaderValue::from_str(&set_cookie)?);
                 session_token
             };
 
@@ -340,8 +337,8 @@ impl Transaction {
             if let Some(new_session_token) = m_new_session_token {
                 let mut response_headers = HeaderMap::new();
                 if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
-                    let cookie_value = format!("{}={}{}", self.settings.cookie, percent_encode(body.token.as_bytes(), COOKIE_OCTET), self.settings.cookie_suffix);
-                    response_headers.insert(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+                    let set_cookie = SetCookie::new(self.settings.cookie.clone(), CookieValue::escape_str(&body.token)).with_options(self.settings.cookie_options.clone()).to_string();
+                    response_headers.insert(SET_COOKIE, HeaderValue::from_str(&set_cookie)?);
                 }
                 Ok((response_headers, redirect(&self.redir_path)).into_response())
             } else {
@@ -381,33 +378,8 @@ async fn set_cache_control(request: Request, next: Next) -> impl IntoResponse {
     (headers, response)
 }
 
-struct CookieLoader(String);
-
-impl CookieLoader {
-    fn from_settings(settings: Arc<Settings>) -> Self {
-        Self(settings.cookie.clone())
-    }
-
-    fn attempt_load(&self, request_headers: &HeaderMap) -> Option<String> {
-        let cookie_header_value = request_headers.get(COOKIE)?.to_str().ok()?;
-        if cookie_header_value.len() > 4096 {
-            return None;
-        }
-        let mut m_value = None;
-        for kv_pair in cookie_header_value.split("; ") {
-            if let Some((key, value)) = kv_pair.split_once('=') {
-                if self.0 == key {
-                    m_value = percent_decode_str(value).decode_utf8().ok().map(|x| x.into_owned());
-                    break;
-                }
-            }
-        }
-        m_value
-    }
-}
-
 fn load_current_session_token(settings: Arc<Settings>, request_headers: &HeaderMap) -> Option<SessionToken> {
-    let cookie_value = CookieLoader::from_settings(settings.clone()).attempt_load(request_headers)?;
+    let cookie_value = request_headers.extract_cookie(&settings.cookie)?.unescape_str().ok()?;
     (SessionTokenLoader {
         required_http_host: request_headers.get(HOST)?.to_str().ok()?,
         verifying_key: settings.signing_key.verifying_key()
