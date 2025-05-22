@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+pub mod cookie;
 pub mod keypair;
 mod serde;
 pub mod session_token;
