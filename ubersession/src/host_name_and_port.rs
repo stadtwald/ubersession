@@ -27,25 +27,22 @@ pub enum InvalidHostNameAndPort {
     #[error("Cannot use 0 as a concrete TCP port")]
     CannotUseZeroTcpPort,
 
-    #[error("No port specified")]
-    NoPort,
-
     #[error("Invalid port number specified")]
     InvalidTcpPort,
 
     #[error("{0}")]
-    InvalidHostName(#[source] InvalidHostName)
+    InvalidHostName(#[source] #[from] InvalidHostName)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HostNameAndPort {
     host_name: HostName,
-    port: u16
+    port: Option<u16>
 }
 
 impl HostNameAndPort {
-    pub fn new(host_name: HostName, port: u16) -> Result<Self, CannotUseZeroTcpPort> {
-        if port == 0 {
+    pub fn new(host_name: HostName, port: Option<u16>) -> Result<Self, CannotUseZeroTcpPort> {
+        if port == Some(0) {
             Err(CannotUseZeroTcpPort)
         } else {
             Ok(Self {
@@ -59,15 +56,15 @@ impl HostNameAndPort {
         &self.host_name
     }
 
-    pub fn port(&self) -> u16 {
+    pub fn port(&self) -> Option<u16> {
         self.port
     }
 
-    pub fn into_parts(self) -> (HostName, u16) {
+    pub fn into_parts(self) -> (HostName, Option<u16>) {
         (self.host_name, self.port)
     }
 
-    pub fn as_parts<'a>(&'a self) -> (&'a HostName, u16) {
+    pub fn as_parts<'a>(&'a self) -> (&'a HostName, Option<u16>) {
         (&self.host_name, self.port)
     }
 }
@@ -75,8 +72,12 @@ impl HostNameAndPort {
 impl Display for HostNameAndPort {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         self.host_name.fmt(formatter)?;
-        formatter.write_char(':')?;
-        self.port.fmt(formatter)
+        if let Some(port) = self.port {
+            formatter.write_char(':')?;
+            port.fmt(formatter)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -91,10 +92,11 @@ impl std::str::FromStr for HostNameAndPort {
                 if let Ok(port) = m_port.try_into() {
                     if port > 0 {
                         match host_name_str.parse() {
-                            Ok(host_name) => Ok(Self {
-                                host_name: host_name,
-                                port: port
-                            }),
+                            Ok(host_name) =>
+                                Ok(Self {
+                                    host_name: host_name,
+                                    port: Some(port)
+                                }),
                             Err(err) => Err(InvalidHostName(err))
                         }
                     } else {
@@ -104,10 +106,13 @@ impl std::str::FromStr for HostNameAndPort {
                     Err(InvalidTcpPort)
                 }
             } else {
-                Err(NoPort)
+                Err(InvalidTcpPort)
             }
         } else {
-            Err(NoPort)
+            Ok(Self {
+                host_name: value.parse()?,
+                port: None
+            })
         }
     }
 }
