@@ -1096,7 +1096,7 @@ checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
 
 [[package]]
 name = "ubersession"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "ubersession_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "data-encoding",
@@ -1130,7 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "ubersession_server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "ed25519-dalek",

@@ -1,6 +1,6 @@
 [package]
 name = 'ubersession'
-version = '0.1.0'
+version = '0.2.0'
 authors = ['William Demchick <william.demchick@gmail.com>']
 license = "ISC"
 edition = '2024'
@@ -47,10 +47,10 @@ version = '1.44.2'
 features = ['full']
 
 [dependencies.ubersession_core]
-version = '0.1.0'
+version = '0.2.0'
 path = '../ubersession_core'
 
 [dependencies.ubersession_server]
-version = '0.1.0'
+version = '0.2.0'
 path = '../ubersession_server'
 

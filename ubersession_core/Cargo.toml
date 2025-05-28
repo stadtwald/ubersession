@@ -1,6 +1,6 @@
 [package]
 name = 'ubersession_core'
-version = '0.1.0'
+version = '0.2.0'
 authors = ['William Demchick <william.demchick@gmail.com>']
 license = "ISC"
 edition = '2024'
