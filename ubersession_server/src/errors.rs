@@ -43,16 +43,8 @@ pub fn build_404() -> Response<Vec<u8>> {
     build_error(StatusCode::NOT_FOUND, render_error_message!("404 Not Found"))
 }
 
-pub async fn handle_404() -> Response<Vec<u8>> {
-    build_404()
-}
-
 pub fn build_400() -> Response<Vec<u8>> {
     build_error(StatusCode::BAD_REQUEST, render_error_message!("400 Bad Request"))
-}
-
-pub async fn handle_400() -> Response<Vec<u8>> {
-    build_400()
 }
 
 pub fn build_500() -> Response<Vec<u8>> {
