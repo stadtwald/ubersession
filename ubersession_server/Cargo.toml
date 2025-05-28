@@ -1,0 +1,44 @@
+[package]
+name = 'ubersession_server'
+version = '0.1.0'
+authors = ['William Demchick <william.demchick@gmail.com>']
+license = "ISC"
+edition = '2024'
+description = 'A simple mechanism for cross-domain WWW session establishment - framework-independent server logic'
+repository = 'https://github.com/stadtwald/ubersession'
+
+[dependencies.anyhow]
+version = '1.0.98'
+
+[dependencies.chrono]
+version = '0.4.40'
+
+[dependencies.ed25519-dalek]
+version = '2.1.1'
+features = ['pem', 'rand_core']
+
+[dependencies.http]
+version = '1'
+
+[dependencies.rand]
+version = '0.8.5'
+default-features = false
+features = ['alloc', 'getrandom']
+
+[dependencies.serde]
+version = '1.0.219'
+features = ['derive']
+
+[dependencies.serde_json]
+version = '1.0.140'
+
+[dependencies.serde_urlencoded]
+version = "0.7.1"
+
+[dependencies.thiserror]
+version = "2.0.12"
+
+[dependencies.ubersession_core]
+version = '0.1.0'
+path = '../ubersession_core'
+
