@@ -340,9 +340,9 @@ impl Host {
             cookie: settings.cookie,
             cookie_options:
                 if settings.protocol == Protocol::Http {
-                    CookieOptions::default().with_max_age(10 * 366 * 86400)
+                    CookieOptions::default().with_max_age(10 * 366 * 86400).with_path("/".to_owned())
                 } else {
-                    CookieOptions::default().with_max_age(10 * 366 * 86400).secure()
+                    CookieOptions::default().with_max_age(10 * 366 * 86400).with_path("/".to_owned()).secure()
                 },
             behaviour: if authority { Behaviour::Authority } else { Behaviour::Mirror }
         }

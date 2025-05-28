@@ -91,6 +91,7 @@ impl AsRef<str> for CookieValue {
 pub struct CookieOptions {
     secure: bool,
     max_age: Option<i32>,
+    path: Option<String>
 }
 
 impl CookieOptions {
@@ -107,13 +108,19 @@ impl CookieOptions {
         self.max_age = Some(max_age);
         self
     }
+
+    pub fn with_path(mut self, path: String) -> Self {
+        self.path = Some(path);
+        self
+    }
 }
 
 impl Default for CookieOptions {
     fn default() -> Self {
         Self {
             secure: false,
-            max_age: None
+            max_age: None,
+            path: None
         }
     }
 }
@@ -126,6 +133,10 @@ impl Display for CookieOptions {
 
         if let Some(max_age) = self.max_age {
             formatter.write_fmt(format_args!("; Max-Age={}", max_age))?;
+        }
+
+        if let Some(ref path) = self.path {
+            formatter.write_fmt(format_args!("; Path={}", path))?;
         }
 
         Ok(())
