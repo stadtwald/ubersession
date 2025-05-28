@@ -19,14 +19,11 @@ use http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, CONTENT_TYPE, LOCATION
 use http::{Method, Request, Response};
 use http::status::StatusCode;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::net::SocketAddr;
-use std::sync::Arc;
 use thiserror::Error;
 use ubersession_core::cookie::*;
 use ubersession_core::host_name::{HostName, HostNameSource};
-use ubersession_core::keypair::Keypair;
 use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
 
 use crate::errors::*;
