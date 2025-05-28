@@ -171,7 +171,17 @@ impl HostSettings {
     }
 
     fn workflow_url(&self) -> String {
-        format!("{}{}{}flow", self.protocol.url_prefix(), self.name, self.path_prefix)
+        let port_str =
+            if let Some(port) = self.url_port {
+                if port != self.protocol.default_port() {
+                    format!(":{}", port)
+                } else {
+                    "".to_owned()
+                }
+            } else {
+                "".to_owned()
+            };
+        format!("{}{}{}{}flow", self.protocol.url_prefix(), self.name, port_str, self.path_prefix)
     }
 }
 
