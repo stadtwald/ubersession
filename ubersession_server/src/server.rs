@@ -322,8 +322,8 @@ enum Behaviour {
 #[derive(Clone, Debug)]
 struct Host {
     name: HostName,
-    base_url: String,
     workflow_url: String,
+    workflow_path: String,
     path_prefix: String,
     cookie: CookieName,
     cookie_options: CookieOptions,
@@ -334,8 +334,8 @@ impl Host {
     fn new(settings: HostSettings, authority: bool) -> Self {
         Self {
             name: settings.name.clone(),
-            base_url: format!("{}{}/", settings.protocol.url_prefix(), settings.name),
             workflow_url: settings.workflow_url(),
+            workflow_path: format!("{}flow", settings.path_prefix),
             path_prefix: settings.path_prefix.into(),
             cookie: settings.cookie,
             cookie_options:
@@ -349,6 +349,10 @@ impl Host {
     }
 
     pub fn handle(&self, server: &ServerInternal, request: Request<Vec<u8>>) -> anyhow::Result<Response<Vec<u8>>> {
+        if request.uri().path() != self.workflow_path {
+            Err(NotFound)?
+        }
+
         let query_parameters: ServiceRequestParameters =
             if request.method() == &Method::GET {
                 match serde_urlencoded::from_str(request.uri().query().unwrap_or_else(|| "")) {
