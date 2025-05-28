@@ -19,6 +19,7 @@ mod host_name_and_port;
 mod html;
 mod server;
 
+pub use crate::errors::{build_400, build_404};
 pub use crate::host_name_and_port::HostNameAndPort;
 pub use crate::server::{DuplicateHost, HostSettings, InvalidPathPrefix, PathPrefix, Protocol, Server, ServerSettings};
 pub use ubersession_core::cookie::CookieName;
