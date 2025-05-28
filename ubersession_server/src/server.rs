@@ -21,6 +21,7 @@ use http::status::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 use thiserror::Error;
 use ubersession_core::cookie::*;
 use ubersession_core::host_name::{HostName, HostNameSource};
@@ -243,7 +244,11 @@ impl ServerSettings {
 const NO_CACHE: HeaderValue = HeaderValue::from_static("private; no-cache");
 const HTML: HeaderValue = HeaderValue::from_static("text/html; charset=utf-8");
 
-pub struct Server {
+#[derive(Clone, Debug)]
+pub struct Server(Arc<ServerInternal>);
+
+#[derive(Debug)]
+pub struct ServerInternal {
     signing_key: SigningKey,
     token_expiry: u32,
     verbose_workflow: bool,
@@ -266,7 +271,7 @@ impl Server {
             hosts.insert(host_name.clone(), Host::new(host_settings.clone(), false));
         }
 
-        Self {
+        Self(Arc::new(ServerInternal {
             signing_key: settings.signing_key,
             token_expiry: settings.token_expiry,
             verbose_workflow: settings.verbose_workflow,
@@ -274,16 +279,18 @@ impl Server {
             hosts: hosts,
             authority_workflow_url: authority_workflow_url,
             authority_name: authority_name
-        }
+        }))
     }
 
     pub fn handle(&self, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
-        let mut response = self.handle_internal(request);
+        let mut response = self.0.handle(request);
         response.headers_mut().insert(CACHE_CONTROL, NO_CACHE);
         response
     }
+}
 
-    fn handle_internal(&self, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+impl ServerInternal {
+    fn handle(&self, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
         if let Some(host_name) = request.headers().extract_host_name() {
             if let Some(host) = self.hosts.get(&host_name) {
                 match host.handle(self, request) {
@@ -341,7 +348,7 @@ impl Host {
         }
     }
 
-    pub fn handle(&self, server: &Server, request: Request<Vec<u8>>) -> anyhow::Result<Response<Vec<u8>>> {
+    pub fn handle(&self, server: &ServerInternal, request: Request<Vec<u8>>) -> anyhow::Result<Response<Vec<u8>>> {
         let query_parameters: ServiceRequestParameters =
             if request.method() == &Method::GET {
                 match serde_urlencoded::from_str(request.uri().query().unwrap_or_else(|| "")) {
@@ -489,7 +496,7 @@ impl Host {
         }
     }
 
-    fn load_current_session_token(&self, server: &Server, request_headers: &HeaderMap) -> Option<SessionToken> {
+    fn load_current_session_token(&self, server: &ServerInternal, request_headers: &HeaderMap) -> Option<SessionToken> {
         let cookie_value = request_headers.extract_cookie(&self.cookie)?.unescape_str().ok()?;
         (SessionTokenLoader {
             required_http_host: self.name.clone(),
