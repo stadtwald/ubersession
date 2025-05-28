@@ -18,8 +18,17 @@ use clap::Args;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use crate::host_name_and_port::HostNameAndPort;
-use crate::server::Server;
+use axum::{Extension, Router, serve};
+use axum::http::{Method, Request};
+use axum::http::request::Parts;
+use axum::extract::RawForm;
+use axum::response::Response;
+use axum::routing;
+use tokio::net::TcpListener;
+use ubersession_core::cookie::*;
+use ubersession_server::*;
+
+use crate::keypair::Keypair;
 
 #[derive(Clone, Debug)]
 #[derive(Args)]
@@ -50,7 +59,7 @@ pub struct Serve {
 
     /// Prefix to use for workflow URLs (will have / suffixed automatically)
     #[arg(long, default_value = "/_session")]
-    pub url_prefix: String,
+    pub url_prefix: PathPrefix,
 
     /// Domain to use for managing authoritative session state (with optional port to use for
     /// generating URLs)
@@ -72,10 +81,76 @@ pub struct Serve {
 
 impl Serve {
     pub fn run(self) -> anyhow::Result<()> {
-        let server = Server::try_init_from_serve_opts(self)?;
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
-        rt.block_on(server.serve())
+        rt.block_on(self.serve())
     }
+
+    async fn serve(self) -> anyhow::Result<()> {
+        if self.token_expiry < 60 {
+            Err(anyhow::anyhow!("Token expiry must be at least a minute"))
+        } else if self.cookie.len() < 1 {
+            Err(anyhow::anyhow!("Cookie name must not be empty"))
+        } else {
+            let raw_input = std::fs::read(&self.private_key_file)?;
+            let keypair: Keypair = serde_json::from_slice(&raw_input)?;
+            let signing_key = keypair.private_key;
+            
+            let protocol =
+                if self.insecure_http {
+                    Protocol::Http
+                } else {
+                    Protocol::Https
+                };
+
+            let authority_host =
+                HostSettings::new(self.authority.host_name().clone())
+                    .with_path_prefix(self.url_prefix.clone())
+                    .with_cookie(CookieName::escape_str(&self.cookie))
+                    .with_protocol(protocol)
+                    .with_url_port(self.authority.port().unwrap_or_else(|| protocol.default_port()));
+
+            let mut server_settings = ServerSettings::new(signing_key, authority_host);
+
+            for host in self.hosts {
+                let mirror_host =
+                    HostSettings::new(host.host_name().clone())
+                        .with_path_prefix(self.url_prefix.clone())
+                        .with_cookie(CookieName::escape_str(&self.cookie))
+                        .with_protocol(protocol)
+                        .with_url_port(host.port().unwrap_or_else(|| protocol.default_port()));
+                server_settings = server_settings.add_host(mirror_host)?;
+            }
+
+            let router = Router::new();
+            let router = router.route("/", routing::any(handle));
+            let router = router.route("/{*segs}", routing::any(handle));
+            let router = router.method_not_allowed_fallback(handle_400);
+            let router = router.layer(Extension(server_settings.build_server()));
+
+            let listener = TcpListener::bind(self.listen).await?;
+            serve(listener, router).await?;
+
+            Ok(())
+        }
+    }
+}
+
+async fn handle_400() -> Response {
+    transform_body(build_400())
+}
+
+async fn handle(Extension(server): Extension<Server>, parts: Parts, RawForm(raw_form): RawForm) -> Response {
+    if parts.method == Method::GET {
+        transform_body(server.handle(Request::from_parts(parts, Vec::new())))
+    } else {
+        transform_body(server.handle(Request::from_parts(parts, raw_form.into())))
+    }
+}
+
+fn transform_body(response: Response<Vec<u8>>) -> Response {
+    let (parts, body) = response.into_parts();
+    let body = body.into();
+    Response::from_parts(parts, body)
 }
 

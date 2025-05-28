@@ -15,10 +15,6 @@
  */
 
 mod cli;
-mod errors;
-mod host_name_and_port;
-mod html;
-mod server;
 
 use clap::Parser;
 pub use ubersession_core::keypair;

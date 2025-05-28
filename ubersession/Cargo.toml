@@ -50,3 +50,7 @@ features = ['full']
 version = '0.1.0'
 path = '../ubersession_core'
 
+[dependencies.ubersession_server]
+version = '0.1.0'
+path = '../ubersession_server'
+

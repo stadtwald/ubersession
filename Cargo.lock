@@ -1110,6 +1110,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "ubersession_core",
+ "ubersession_server",
 ]
 
 [[package]]
