@@ -366,7 +366,7 @@ impl Host {
         let body_parameters: Option<ServiceRequestBody> =
             if request.method() == &Method::POST {
                 match serde_urlencoded::from_bytes(request.body()) {
-                    Ok(body_parameters) => body_parameters,
+                    Ok(body_parameters) => Some(body_parameters),
                     Err(_) => Err(InvalidRequest)?
                 }
             } else {
