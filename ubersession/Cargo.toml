@@ -13,9 +13,6 @@ version = '1.0.98'
 [dependencies.axum]
 version = '0.8.3'
 
-[dependencies.chrono]
-version = '0.4.40'
-
 [dependencies.clap]
 version = '4.5.37'
 features = ['derive', 'env']
@@ -29,18 +26,8 @@ version = '0.8.5'
 default-features = false
 features = ['alloc', 'getrandom']
 
-[dependencies.serde]
-version = '1.0.219'
-features = ['derive']
-
 [dependencies.serde_json]
 version = '1.0.140'
-
-[dependencies.serde_urlencoded]
-version = "0.7.1"
-
-[dependencies.thiserror]
-version = "2.0.12"
 
 [dependencies.tokio]
 version = '1.44.2'
