@@ -1,7 +1,7 @@
 use axum::Router;
 use axum::body::Body;
 use axum::http::StatusCode;
-use axum::http::header::{HeaderValue, LOCATION};
+use axum::http::header::{HeaderValue, InvalidHeaderValue, LOCATION};
 use axum::http::request::Parts;
 use axum::response::Response;
 use axum::extract::{Extension, FromRequestParts};
@@ -17,7 +17,7 @@ pub use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
 
 #[derive(Clone, Debug)]
 pub struct AxumSessionExtractionSettings {
-    path_prefix: PathPrefix,
+    workflow_path: HeaderValue,
     cookie: CookieName,
     verifying_key: VerifyingKey,
     host_name: Option<HostName>
@@ -26,19 +26,21 @@ pub struct AxumSessionExtractionSettings {
 #[derive(Clone, Debug)]
 struct ExtractSettingsWrapper(Arc<AxumSessionExtractionSettings>);
 
+const DEFAULT_WORKFLOW_PATH: HeaderValue = HeaderValue::from_static("/_session/flow");
+
 impl AxumSessionExtractionSettings {
     pub fn new(verifying_key: VerifyingKey) -> Self {
         Self {
-            path_prefix: PathPrefix::default(),
+            workflow_path: DEFAULT_WORKFLOW_PATH,
             cookie: CookieName::escape_str("UBERSESSION"),
             verifying_key: verifying_key,
             host_name: None
         }
     }
  
-    pub fn with_path_prefix(mut self, path_prefix: PathPrefix) -> Self {
-        self.path_prefix = path_prefix;
-        self
+    pub fn with_path_prefix(mut self, path_prefix: PathPrefix) -> Result<Self, InvalidHeaderValue> {
+        self.workflow_path = HeaderValue::try_from(format!("{}flow", path_prefix))?;
+        Ok(self)
     }
 
     pub fn with_cookie(mut self, cookie: CookieName) -> Self {
@@ -102,14 +104,8 @@ fn from_request_parts(parts: &Parts) -> Result<SessionToken, Response> {
         Ok(session_token.clone())
     } else {
         let mut response = Response::new(Body::empty());
-
-        if let Ok(location_header_value) = HeaderValue::try_from(format!("{}flow", settings.path_prefix)) {
-            *response.status_mut() = StatusCode::SEE_OTHER;
-            response.headers_mut().insert(LOCATION, location_header_value);
-        } else {
-            *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-        }
-
+        *response.status_mut() = StatusCode::SEE_OTHER;
+        response.headers_mut().insert(LOCATION, settings.workflow_path.clone());
         Err(response)
     }
 }
