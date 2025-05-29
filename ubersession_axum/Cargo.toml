@@ -1,0 +1,26 @@
+[package]
+name = 'ubersession_axum'
+version = '0.2.0'
+authors = ['William Demchick <william.demchick@gmail.com>']
+license = "ISC"
+edition = '2024'
+description = 'A simple mechanism for cross-domain WWW session establishment - utilities for use with axum'
+repository = 'https://github.com/stadtwald/ubersession'
+
+[dependencies.axum]
+version = '0.8'
+
+[dependencies.ed25519-dalek]
+version = '2.1'
+features = ['pem', 'rand_core']
+
+[dependencies.serde_json]
+version = '1'
+
+[dependencies.uuid]
+version = '1'
+
+[dependencies.ubersession_core]
+version = '0.2'
+path = '../ubersession_core'
+

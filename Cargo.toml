@@ -1,4 +1,9 @@
 [workspace]
-members = ['ubersession', 'ubersession_core', 'ubersession_server']
+members = [
+    'ubersession',
+    'ubersession_axum',
+    'ubersession_core',
+    'ubersession_server'
+]
 resolver = "3"
 
