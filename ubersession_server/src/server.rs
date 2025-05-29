@@ -122,7 +122,6 @@ pub struct DuplicateHost;
 pub struct ServerSettings {
     signing_key: SigningKey,
     token_expiry: u32,
-    verbose_workflow: bool,
     no_plain_html: bool,
     authority: HostSettings,
     hosts: HashMap<HostName, HostSettings>
@@ -133,7 +132,6 @@ impl ServerSettings {
         Self {
             signing_key: signing_key,
             token_expiry: 86400 * 366 * 10,
-            verbose_workflow: false,
             no_plain_html: false,
             authority: authority,
             hosts: HashMap::new()
@@ -142,11 +140,6 @@ impl ServerSettings {
 
     pub fn with_token_expiry(mut self, token_expiry: u32) -> Self {
         self.token_expiry = token_expiry;
-        self
-    }
-
-    pub fn with_verbose_workflow(mut self) -> Self {
-        self.verbose_workflow = true;
         self
     }
 
@@ -179,7 +172,6 @@ pub struct Server(Arc<ServerInternal>);
 pub struct ServerInternal {
     signing_key: SigningKey,
     token_expiry: u32,
-    verbose_workflow: bool,
     no_plain_html: bool,
     hosts: HashMap<HostName, Host>,
     authority_workflow_url: String,
@@ -202,7 +194,6 @@ impl Server {
         Self(Arc::new(ServerInternal {
             signing_key: settings.signing_key,
             token_expiry: settings.token_expiry,
-            verbose_workflow: settings.verbose_workflow,
             no_plain_html: settings.no_plain_html,
             hosts: hosts,
             authority_workflow_url: authority_workflow_url,

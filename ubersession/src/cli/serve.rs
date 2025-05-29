@@ -45,14 +45,6 @@ pub struct Serve {
     #[arg(long, default_value_t = 366 * 86400)]
     pub token_expiry: u32,
 
-    /// How long token requests last before being considered expired, in seconds
-    #[arg(long, default_value_t = 600)]
-    pub token_request_expiry: u32,
-
-    /// Make workflow visible to the user
-    #[arg(long)]
-    pub verbose_workflow: bool,
-
     /// Turn off fallback to plain HTML when JavaScript support is not available
     #[arg(long)]
     pub no_plain_html: bool,
