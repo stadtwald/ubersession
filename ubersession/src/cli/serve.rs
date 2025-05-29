@@ -19,12 +19,11 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use axum::{Extension, Router, serve};
-use axum::http::{Method, Request};
-use axum::http::request::Parts;
-use axum::extract::RawForm;
+use axum::extract::Request;
 use axum::response::Response;
 use axum::routing;
 use tokio::net::TcpListener;
+use ubersession_axum::adapt::*;
 use ubersession_core::cookie::*;
 use ubersession_server::*;
 
@@ -129,20 +128,11 @@ impl Serve {
 }
 
 async fn handle_400() -> Response {
-    transform_body(build_400())
+    adapt_response(build_400())
 }
 
-async fn handle(Extension(server): Extension<Server>, parts: Parts, RawForm(raw_form): RawForm) -> Response {
-    if parts.method == Method::GET {
-        transform_body(server.handle(Request::from_parts(parts, Vec::new())))
-    } else {
-        transform_body(server.handle(Request::from_parts(parts, raw_form.into())))
-    }
+async fn handle(Extension(server): Extension<Server>, request: Request) -> Response {
+    adapt_response(server.handle(adapt_request(request).await))
 }
 
-fn transform_body(response: Response<Vec<u8>>) -> Response {
-    let (parts, body) = response.into_parts();
-    let body = body.into();
-    Response::from_parts(parts, body)
-}
 

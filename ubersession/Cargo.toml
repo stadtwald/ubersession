@@ -33,11 +33,15 @@ version = '1.0.140'
 version = '1.44.2'
 features = ['full']
 
+[dependencies.ubersession_axum]
+version = '0.2'
+path = '../ubersession_axum'
+
 [dependencies.ubersession_core]
-version = '0.2.0'
+version = '0.2'
 path = '../ubersession_core'
 
 [dependencies.ubersession_server]
-version = '0.2.0'
+version = '0.2'
 path = '../ubersession_server'
 

@@ -1105,6 +1105,7 @@ dependencies = [
  "rand",
  "serde_json",
  "tokio",
+ "ubersession_axum",
  "ubersession_core",
  "ubersession_server",
 ]

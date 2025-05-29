@@ -14,6 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+pub mod adapt;
+
 use axum::Router;
 use axum::body::Body;
 use axum::http::StatusCode;
@@ -146,4 +148,5 @@ impl<S> FromRequestParts<S> for RequiredSessionId {
          ready(from_request_parts(parts).map(|x| Self(x.id)))       
     }
 }
+
 
