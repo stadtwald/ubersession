@@ -14,12 +14,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-mod html;
 mod server;
 
 pub use crate::errors::{build_400, build_404};
 pub use crate::server::{DuplicateHost, HostSettings, Protocol, Server, ServerSettings};
 pub use ubersession_core::cookie::CookieName;
+pub use ubersession_core::html;
 pub use ubersession_core::http_errors as errors;
 pub use ubersession_core::host_name::HostNameAndPort;
 pub use ubersession_core::path_prefix::{InvalidPathPrefix, PathPrefix};
