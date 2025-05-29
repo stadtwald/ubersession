@@ -17,5 +17,6 @@
 pub mod cookie;
 pub mod host_name;
 pub mod keypair;
+pub mod path_prefix;
 mod serde;
 pub mod session_token;

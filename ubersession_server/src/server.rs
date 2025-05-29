@@ -20,11 +20,11 @@ use http::{Method, Request, Response};
 use http::status::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use thiserror::Error;
 use ubersession_core::cookie::*;
 use ubersession_core::host_name::{HostName, HostNameSource};
+use ubersession_core::path_prefix::PathPrefix;
 use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
 
 use crate::errors::*;
@@ -58,78 +58,6 @@ impl Protocol {
     }
 }
 
-#[derive(Clone, Debug, Error)]
-pub enum InvalidPathPrefix {
-    #[error("Path prefix cannot be empty")]
-    Empty,
-
-    #[error("Path prefix must start with forward slash")]
-    NoInitialSlash
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct PathPrefix(String);
-
-impl PathPrefix {
-    fn validate(value: &str) -> Result<(), InvalidPathPrefix> {
-        if value.len() == 0 {
-            Err(InvalidPathPrefix::Empty)
-        } else if !value.starts_with('/') {
-            Err(InvalidPathPrefix::NoInitialSlash)
-        } else {
-            Ok(())
-        }
-    }
-
-    fn cons(mut value: String) -> Self {
-        if !value.ends_with('/') {
-            value.push('/')
-        }
-        Self(value)
-    }
-}
-
-impl std::str::FromStr for PathPrefix {
-    type Err = InvalidPathPrefix;
-
-    fn from_str(value: &str) -> Result<Self, InvalidPathPrefix> {
-        Self::validate(value).map(|_| Self::cons(value.to_owned()))
-    }
-}
-
-impl TryFrom<String> for PathPrefix {
-    type Error = InvalidPathPrefix;
-
-    fn try_from(value: String) -> Result<Self, InvalidPathPrefix> {
-        Self::validate(&value).map(|_| Self::cons(value))
-    }
-}
-
-impl TryFrom<&str> for PathPrefix {
-    type Error = InvalidPathPrefix;
-
-    fn try_from(value: &str) -> Result<Self, InvalidPathPrefix> {
-        Self::validate(value).map(|_| Self::cons(value.to_owned()))
-    }
-}
-
-impl From<PathPrefix> for String {
-    fn from(value: PathPrefix) -> Self {
-        value.0
-    }
-}
-
-impl Display for PathPrefix {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl Default for PathPrefix {
-    fn default() -> Self {
-        Self("/_session/".to_owned())
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct HostSettings {
