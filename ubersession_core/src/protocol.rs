@@ -14,10 +14,31 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-pub mod cookie;
-pub mod host_name;
-pub mod keypair;
-pub mod path_prefix;
-pub mod protocol;
-mod serde;
-pub mod session_token;
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Protocol {
+    Http,
+    Https
+}
+
+impl Protocol {
+    pub fn is_secure(&self) -> bool {
+        self == &Protocol::Https
+    }
+
+    pub fn url_prefix(&self) -> &'static str {
+        use Protocol::*;
+        match self {
+            &Http => "http://",
+            &Https => "https://"
+        }
+    }
+
+    pub fn default_port(&self) -> u16 {
+        use Protocol::*;
+        match self {
+            &Http => 80,
+            &Https => 443
+        }
+    }
+}
+

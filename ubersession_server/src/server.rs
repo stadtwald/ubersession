@@ -25,39 +25,11 @@ use thiserror::Error;
 use ubersession_core::cookie::*;
 use ubersession_core::host_name::{HostName, HostNameSource};
 use ubersession_core::path_prefix::PathPrefix;
+pub use ubersession_core::protocol::Protocol;
 use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
 
 use crate::errors::*;
 use crate::html::HtmlEscapedText;
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum Protocol {
-    Http,
-    Https
-}
-
-impl Protocol {
-    pub fn is_secure(&self) -> bool {
-        self == &Protocol::Https
-    }
-
-    pub fn url_prefix(&self) -> &'static str {
-        use Protocol::*;
-        match self {
-            &Http => "http://",
-            &Https => "https://"
-        }
-    }
-
-    pub fn default_port(&self) -> u16 {
-        use Protocol::*;
-        match self {
-            &Http => 80,
-            &Https => 443
-        }
-    }
-}
-
 
 #[derive(Clone, Debug)]
 pub struct HostSettings {
