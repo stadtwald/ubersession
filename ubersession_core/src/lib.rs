@@ -16,6 +16,7 @@
 
 pub mod cookie;
 pub mod host_name;
+pub mod http_errors;
 pub mod keypair;
 pub mod path_prefix;
 pub mod protocol;
