@@ -23,3 +23,4 @@ pub mod path_prefix;
 pub mod protocol;
 mod serde;
 pub mod session_token;
+pub mod uri;

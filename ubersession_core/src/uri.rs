@@ -1,0 +1,187 @@
+use http::header::HeaderValue;
+use http::uri::Uri as HttpUri;
+use serde::{Deserialize, Serialize};
+use std::fmt::{Display, Formatter};
+use thiserror::Error;
+
+use crate::host_name::HostNameAndPort;
+use crate::protocol::Protocol;
+
+#[derive(Clone, Debug)]
+pub struct AbsoluteComponent {
+    protocol: Protocol,
+    host: HostNameAndPort
+}
+
+impl AbsoluteComponent {
+    pub fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+
+    pub fn host<'a>(&'a self) -> &'a HostNameAndPort {
+        &self.host
+    }
+}
+
+impl Display for AbsoluteComponent {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        self.protocol.url_prefix().fmt(formatter)?;
+        self.host.fmt(formatter)
+    }
+}
+
+#[derive(Clone, Debug)]
+#[derive(Deserialize, Serialize)]
+#[serde(try_from = "&str", into = "String")]
+pub struct Uri {
+    absolute: Option<AbsoluteComponent>,
+    path: String,
+    query: Option<String>,
+    header_value: HeaderValue
+}
+
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct InvalidUri(#[from] InvalidUriKind);
+
+#[derive(Clone, Debug, Error)]
+enum InvalidUriKind {
+    #[error("URI is invalid")]
+    InvalidUri,
+
+    #[error("Absolute URI must use either http or https schemes")]
+    InvalidProtocol,
+
+    #[error("Absolute URI must have an authority")]
+    MissingAuthority,
+
+    #[error("Host name is invalid (cannot contain credentials)")]
+    InvalidAuthority,
+
+    #[error("Path is invalid")]
+    InvalidPath
+}
+
+impl std::str::FromStr for Uri {
+    type Err = InvalidUri;
+
+    fn from_str(value: &str) -> Result<Self, InvalidUri> {
+        let uri: HttpUri = value.parse().map_err(|_| InvalidUriKind::InvalidUri)?;
+
+        let absolute =
+            if let Some(scheme) = uri.scheme_str() {
+                if let Ok(protocol) = scheme.parse() {
+                    if let Some(authority) = uri.authority() {
+                        if let Ok(host_name_and_port) = authority.as_str().parse::<HostNameAndPort>() {
+                            Some(AbsoluteComponent {
+                                protocol: protocol,
+                                host: host_name_and_port.normalize_port(protocol)
+                            })
+                        } else {
+                            Err(InvalidUriKind::InvalidAuthority)?
+                        }
+                    } else {
+                        Err(InvalidUriKind::MissingAuthority)?
+                    }
+                } else {
+                    Err(InvalidUriKind::InvalidProtocol)?
+                }
+            } else {
+                None
+            };
+
+        let mut path = uri.path().to_owned();
+
+        if path.len() == 0 {
+            path.push('/');
+        }
+
+        if !path.starts_with('/') {
+            Err(InvalidUriKind::InvalidPath)?
+        }
+
+        let query = uri.query().map(|x| x.to_owned());
+
+        let mut display = absolute.as_ref().map(|x| x.to_string()).unwrap_or_else(|| String::new());
+        display.push_str(&path);
+        if let Some(ref query) = query {
+            display.push('?');
+            display.push_str(query);
+        }
+
+        Ok(Self {
+            absolute: absolute,
+            path: path,
+            query: query,
+            header_value: HeaderValue::try_from(display).map_err(|_| InvalidUriKind::InvalidUri)?
+        })
+    }
+}
+
+impl From<Uri> for HeaderValue {
+    fn from(value: Uri) -> HeaderValue {
+        value.header_value
+    }
+}
+
+impl TryFrom<&str> for Uri {
+    type Error = InvalidUri;
+
+    fn try_from(value: &str) -> Result<Self, InvalidUri> {
+        value.parse()
+    }
+}
+
+impl Display for Uri {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(ref absolute) = self.absolute {
+            absolute.fmt(formatter)?;
+        }
+
+        formatter.write_str(&self.path)?;
+
+        if let Some(ref query) = self.query {
+            formatter.write_str("?")?;
+            formatter.write_str(&query)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl From<Uri> for String {
+    fn from(value: Uri) -> Self {
+        value.to_string()
+    }
+}
+
+impl Uri {
+    pub fn is_absolute(&self) -> bool {
+        self.absolute.is_some()
+    }
+
+    pub fn absolute_component<'a>(&'a self) -> Option<&'a AbsoluteComponent> {
+        self.absolute.as_ref()
+    }
+
+    pub fn protocol(&self) -> Option<Protocol> {
+        self.absolute.as_ref().map(|x| x.protocol)
+    }
+
+    pub fn host<'a>(&'a self) -> Option<&'a HostNameAndPort> {
+        self.absolute.as_ref().map(|x| &x.host)
+    }
+
+    pub fn path<'a>(&'a self) -> &'a str {
+        self.path.as_str()
+    }
+
+    pub fn query<'a>(&'a self) -> Option<&'a str> {
+        self.query.as_deref()
+    }
+
+    pub fn header_value(&self) -> HeaderValue {
+        self.header_value.clone()
+    }
+}
+
