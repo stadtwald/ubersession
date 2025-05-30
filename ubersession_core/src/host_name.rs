@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Write};
 use thiserror::Error;
 
+use crate::protocol::Protocol;
+
 #[derive(Clone, Copy, Debug, Error)]
 pub enum InvalidHostName {
     #[error("Host name must not be empty")]
@@ -150,6 +152,15 @@ impl HostNameAndPort {
 
     pub fn as_parts<'a>(&'a self) -> (&'a HostName, Option<u16>) {
         (&self.host_name, self.port)
+    }
+
+    pub fn normalize_port(mut self, protocol: Protocol) -> Self {
+        if let Some(port) = self.port {
+            if port == protocol.default_port() {
+                self.port = None;
+            }
+        }
+        self
     }
 }
 
