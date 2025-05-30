@@ -59,7 +59,20 @@ enum InvalidUriKind {
     InvalidAuthority,
 
     #[error("Path is invalid")]
-    InvalidPath
+    InvalidPath,
+
+    #[error("Is not a relative URI")]
+    NotRelative
+}
+
+#[derive(Clone, Debug, Error)]
+#[error("Is not a relative URI")]
+pub struct NotRelativeUri;
+
+impl From<NotRelativeUri> for InvalidUri {
+    fn from(_value: NotRelativeUri) -> Self {
+        InvalidUri(InvalidUriKind::NotRelative)
+    }
 }
 
 impl std::str::FromStr for Uri {
@@ -164,12 +177,98 @@ impl Uri {
         self.absolute.as_ref()
     }
 
+    pub fn into_relative(self) -> Result<RelativeUri, NotRelativeUri> {
+        if self.is_absolute() {
+            Err(NotRelativeUri)
+        } else {
+            Ok(RelativeUri {
+                path: self.path,
+                query: self.query,
+                header_value: self.header_value
+            })
+        }
+    }
+
     pub fn protocol(&self) -> Option<Protocol> {
         self.absolute.as_ref().map(|x| x.protocol)
     }
 
     pub fn host<'a>(&'a self) -> Option<&'a HostNameAndPort> {
         self.absolute.as_ref().map(|x| &x.host)
+    }
+
+    pub fn path<'a>(&'a self) -> &'a str {
+        self.path.as_str()
+    }
+
+    pub fn query<'a>(&'a self) -> Option<&'a str> {
+        self.query.as_deref()
+    }
+
+    pub fn header_value(&self) -> HeaderValue {
+        self.header_value.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+#[derive(Deserialize, Serialize)]
+#[serde(try_from = "&str", into = "String")]
+pub struct RelativeUri {
+    path: String,
+    query: Option<String>,
+    header_value: HeaderValue
+}
+
+impl Display for RelativeUri {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.path)?;
+
+        if let Some(ref query) = self.query {
+            formatter.write_str("?")?;
+            formatter.write_str(query)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl std::str::FromStr for RelativeUri {
+    type Err = InvalidUri;
+
+    fn from_str(value: &str) -> Result<Self, InvalidUri> {
+        let uri: Uri = value.parse()?;
+        Ok(uri.into_relative()?)
+    }
+}
+
+impl TryFrom<&str> for RelativeUri {
+    type Error = InvalidUri;
+
+    fn try_from(value: &str) -> Result<Self, InvalidUri> {
+        value.parse()
+    }
+}
+
+impl From<RelativeUri> for String {
+    fn from(value: RelativeUri) -> Self {
+        value.to_string()
+    }
+}
+
+impl From<RelativeUri> for HeaderValue {
+    fn from(value: RelativeUri) -> Self {
+        value.header_value
+    }
+}
+
+impl RelativeUri {
+    pub fn into_uri(self) -> Uri {
+        Uri {
+            absolute: None,
+            path: self.path,
+            query: self.query,
+            header_value: self.header_value
+        }
     }
 
     pub fn path<'a>(&'a self) -> &'a str {
