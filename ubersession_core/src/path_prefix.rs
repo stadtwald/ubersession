@@ -23,7 +23,29 @@ pub enum InvalidPathPrefix {
     Empty,
 
     #[error("Path prefix must start with forward slash")]
-    NoInitialSlash
+    NoInitialSlash,
+
+    #[error("Path prefix must not contain two consecutive forward slashes")]
+    TwoConsecutiveSlashes,
+
+    #[error("Path prefix must not contain an invalid character")]
+    ForbiddenCharacter
+}
+
+fn is_sub_delim(c: char) -> bool {
+    c == '!' || c == '$' || c == '&' || c == '\'' || c == '(' || c == ')' || c == '*' || c == '+' || c == ',' || c == ';' || c == '='
+}
+
+fn is_alpha(c: char) -> bool {
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+fn is_digit(c: char) -> bool {
+    c >= '0' && c <= '9'
+}
+
+fn valid_char(c: char) -> bool {
+    is_sub_delim(c) || is_alpha(c) || is_digit(c) || c == '-' || c == '.' || c == '_' || c == '~' || c == '/' || c == '%'
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -31,10 +53,15 @@ pub struct PathPrefix(String);
 
 impl PathPrefix {
     fn validate(value: &str) -> Result<(), InvalidPathPrefix> {
+        use InvalidPathPrefix::*;
         if value.len() == 0 {
-            Err(InvalidPathPrefix::Empty)
+            Err(Empty)
         } else if !value.starts_with('/') {
-            Err(InvalidPathPrefix::NoInitialSlash)
+            Err(NoInitialSlash)
+        } else if value.contains("//") {
+            Err(TwoConsecutiveSlashes)
+        } else if !value.chars().all(valid_char) {
+            Err(ForbiddenCharacter)
         } else {
             Ok(())
         }
@@ -90,3 +117,24 @@ impl Default for PathPrefix {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validation() -> () {
+        assert!(PathPrefix::default().to_string().parse::<PathPrefix>().is_ok());
+
+        let must_fail = ["", "blah", "/more/fails///", "//fail", "/not\nallowed", "/also not allowed", "/no-query/allowed?hello=test"];
+
+        for x in must_fail {
+            assert!(x.parse::<PathPrefix>().is_err());
+        }
+
+        let must_succeed = ["/", "/hello", "/hello/world", "/hello/world/", "/this%20is%20allowed", "/~mike", "/UPPERCASE/is/also/allowed", "/test-page/", "/test_page/test"];
+
+        for x in must_succeed {
+            assert!(x.parse::<PathPrefix>().is_ok());
+        }
+    }
+}
