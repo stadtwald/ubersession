@@ -214,8 +214,20 @@ impl Uri {
         self.path.as_str()
     }
 
-    pub fn query<'a>(&'a self) -> Option<&'a str> {
+    pub fn query_str<'a>(&'a self) -> Option<&'a str> {
         self.query.as_deref()
+    }
+
+    pub fn without_query(mut self) -> Self {
+        if self.query.is_none() {
+            self
+        } else {
+            self.query = None;
+            self.header_value = HeaderValue::try_from(&self.to_string()).unwrap(); // previous validation
+                                                                                   // should ensure this
+                                                                                   // unwrap suceeeds
+            self
+        }
     }
 
     pub fn header_value(&self) -> HeaderValue {
@@ -288,8 +300,20 @@ impl RelativeUri {
         self.path.as_str()
     }
 
-    pub fn query<'a>(&'a self) -> Option<&'a str> {
+    pub fn query_str<'a>(&'a self) -> Option<&'a str> {
         self.query.as_deref()
+    }
+
+    pub fn without_query(mut self) -> Self {
+        if self.query.is_none() {
+            self
+        } else {
+            self.query = None;
+            self.header_value = HeaderValue::try_from(&self.to_string()).unwrap(); // previous validation
+                                                                                   // should ensure this
+                                                                                   // unwrap suceeeds
+            self
+        }
     }
 
     pub fn header_value(&self) -> HeaderValue {
