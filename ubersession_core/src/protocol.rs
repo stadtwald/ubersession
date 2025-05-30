@@ -14,10 +14,50 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Deserialize, Serialize)]
+#[serde(try_from = "&str", into = "&'static str")]
 pub enum Protocol {
     Http,
     Https
+}
+
+impl From<Protocol> for &'static str {
+    fn from(value: Protocol) -> Self {
+        match value {
+            Protocol::Http => "http",
+            Protocol::Https => "https"
+        }
+    }
+}
+
+#[derive(Clone, Debug, Error)]
+#[error("Protocol must be either http or https")]
+pub struct InvalidProtocol;
+
+impl TryFrom<&str> for Protocol {
+    type Error = InvalidProtocol;
+
+    fn try_from(value: &str) -> Result<Self, InvalidProtocol> {
+        value.parse()
+    }
+}
+
+impl std::str::FromStr for Protocol {
+    type Err = InvalidProtocol;
+
+    fn from_str(value: &str) -> Result<Self, InvalidProtocol> {
+        if value == "http" {
+            Ok(Protocol::Http)
+        } else if value == "https" {
+            Ok(Protocol::Https)
+        } else {
+            Err(InvalidProtocol)
+        }
+    }
 }
 
 impl Protocol {
