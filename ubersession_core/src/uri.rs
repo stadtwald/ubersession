@@ -81,6 +81,14 @@ impl std::str::FromStr for Uri {
     fn from_str(value: &str) -> Result<Self, InvalidUri> {
         let uri: HttpUri = value.parse().map_err(|_| InvalidUriKind::InvalidUri)?;
 
+        if uri.scheme().is_none() && uri.authority().is_some() {
+            Err(InvalidUriKind::InvalidUri)?
+        }
+
+        if uri.scheme().is_some() && uri.authority().is_none() {
+            Err(InvalidUriKind::InvalidUri)?
+        }
+
         let absolute =
             if let Some(scheme) = uri.scheme_str() {
                 if let Ok(protocol) = scheme.parse() {
@@ -110,6 +118,11 @@ impl std::str::FromStr for Uri {
         }
 
         if !path.starts_with('/') {
+            Err(InvalidUriKind::InvalidPath)?
+        }
+
+        // see RFC 3986 section 3.3
+        if path.contains("//") {
             Err(InvalidUriKind::InvalidPath)?
         }
 
@@ -281,6 +294,64 @@ impl RelativeUri {
 
     pub fn header_value(&self) -> HeaderValue {
         self.header_value.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_absolute_validation() -> () {
+        let must_fail = ["", "ftp://somewhere.net/dir", "http://test:test@example.net/hello"];
+
+        for x in must_fail {
+            assert!(x.parse::<Uri>().is_err());
+        }
+
+        let must_succeed = [
+            "https://example.net",
+            "http://example.net",
+            "https://example.net/",
+            "http://example.net/",
+            "https://example.net/hello",
+            "http://example.net/hello",
+            "https://example.net/hello/",
+            "http://example.net/hello/",
+            "http://192.168.0.20/",
+            "http://example.net:3000",
+            "http://example.net:3000/",
+            "http://example.net:4000/test/test",
+            "http://example.net/hello/world",
+            "http://example.net/this%20is%20allowed",
+            "http://example.net/~mike",
+            "http://example.net/UPPERCASE/is/also/allowed",
+            "http://example.net/test-page/",
+            "http://example.org/test_page/test",
+            "http://example.com/test.php?hello=world",
+            "http://example.net/?hello=world",
+            "http://example.com/test/test.php?hello=world&test=another"
+        ];
+
+        for x in must_succeed {
+            assert!(x.parse::<Uri>().unwrap().is_absolute());
+        }
+    }
+
+    #[test]
+    fn test_relative_validation() -> () {
+        let must_fail = ["", "blah", "/more/fails///", "//fail", "/not\nallowed", "/also not allowed"];
+
+        for x in must_fail {
+            assert!(x.parse::<RelativeUri>().is_err());
+        }
+
+        let must_succeed = ["/", "/hello", "/hello/world", "/hello/world/", "/this%20is%20allowed", "/~mike", "/UPPERCASE/is/also/allowed", "/test-page/", "/test_page/test"];
+
+        for x in must_succeed {
+            assert!(x.parse::<RelativeUri>().is_ok());
+            assert!(!(x.parse::<Uri>().unwrap().is_absolute()));
+        }
     }
 }
 
