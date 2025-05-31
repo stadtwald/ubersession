@@ -15,6 +15,7 @@
  */
 
 pub mod cookie;
+pub mod header_string;
 pub mod host_name;
 pub mod html;
 pub mod http_errors;
