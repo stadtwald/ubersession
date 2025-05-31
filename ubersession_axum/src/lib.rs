@@ -19,7 +19,7 @@ pub mod adapt;
 use axum::Router;
 use axum::body::Body;
 use axum::http::StatusCode;
-use axum::http::header::{HeaderValue, InvalidHeaderValue, LOCATION};
+use axum::http::header::LOCATION;
 use axum::http::request::Parts;
 use axum::response::Response;
 use axum::extract::{Extension, FromRequestParts};
@@ -29,13 +29,14 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 pub use ubersession_core::cookie::{CookieHeaderSource, CookieName};
+use ubersession_core::header_string::{HeaderString, HeaderStringChar, StaticHeaderString};
 pub use ubersession_core::host_name::{HostName, HostNameSource};
-pub use ubersession_core::path_prefix::PathPrefix;
 pub use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
+pub use ubersession_core::uri::UriPath;
 
 #[derive(Clone, Debug)]
 pub struct AxumSessionExtractionSettings {
-    workflow_path: HeaderValue,
+    workflow_path: HeaderString,
     cookie: CookieName,
     verifying_key: VerifyingKey,
     host_name: Option<HostName>
@@ -44,21 +45,28 @@ pub struct AxumSessionExtractionSettings {
 #[derive(Clone, Debug)]
 struct ExtractSettingsWrapper(Arc<AxumSessionExtractionSettings>);
 
-const DEFAULT_WORKFLOW_PATH: HeaderValue = HeaderValue::from_static("/_session/flow");
+const DEFAULT_WORKFLOW_PATH: StaticHeaderString = StaticHeaderString::from_static("/_session/flow");
+const FORWARD_SLASH: HeaderStringChar = HeaderStringChar::from_static('/');
+const FLOW: StaticHeaderString = StaticHeaderString::from_static("flow");
+
 
 impl AxumSessionExtractionSettings {
     pub fn new(verifying_key: VerifyingKey) -> Self {
         Self {
-            workflow_path: DEFAULT_WORKFLOW_PATH,
+            workflow_path: DEFAULT_WORKFLOW_PATH.to_header_string(),
             cookie: CookieName::escape_str("UBERSESSION"),
             verifying_key: verifying_key,
             host_name: None
         }
     }
  
-    pub fn with_path_prefix(mut self, path_prefix: PathPrefix) -> Result<Self, InvalidHeaderValue> {
-        self.workflow_path = HeaderValue::try_from(format!("{}flow", path_prefix))?;
-        Ok(self)
+    pub fn with_path_prefix(mut self, uri: UriPath) -> Self {
+        self.workflow_path = uri.header_string();
+        if !self.workflow_path.as_str().ends_with('/') {
+            self.workflow_path.push(FORWARD_SLASH);
+        }
+        self.workflow_path.push_str(&FLOW.to_header_string());
+        self
     }
 
     pub fn with_cookie(mut self, cookie: CookieName) -> Self {
@@ -117,7 +125,7 @@ fn from_request_parts(parts: &Parts) -> Result<SessionToken, Response> {
     } else {
         let mut response = Response::new(Body::empty());
         *response.status_mut() = StatusCode::SEE_OTHER;
-        response.headers_mut().insert(LOCATION, settings.workflow_path.clone());
+        response.headers_mut().insert(LOCATION, settings.workflow_path.clone().into());
         Err(response)
     }
 }

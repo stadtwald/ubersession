@@ -23,10 +23,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use ubersession_core::cookie::*;
+use ubersession_core::header_string::{HeaderString, HeaderStringChar, StaticHeaderString};
 use ubersession_core::host_name::{HostName, HostNameSource};
-use ubersession_core::path_prefix::PathPrefix;
 pub use ubersession_core::protocol::Protocol;
 use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
+use ubersession_core::uri::UriPath;
 
 use crate::errors::*;
 use crate::html::HtmlEscapedText;
@@ -37,8 +38,15 @@ pub struct HostSettings {
     protocol: Protocol,
     cookie: CookieName,
     url_port: Option<u16>,
-    path_prefix: PathPrefix
+    workflow_path: HeaderString,
+    path_prefix: HeaderString
 }
+
+const FORWARD_SLASH: HeaderStringChar = HeaderStringChar::from_static('/');
+const COLON: HeaderStringChar = HeaderStringChar::from_static(':');
+const DEFAULT_PATH_PREFIX: StaticHeaderString = StaticHeaderString::from_static("/_session/");
+const DEFAULT_WORKFLOW_PATH: StaticHeaderString = StaticHeaderString::from_static("/_session/flow");
+const FLOW: StaticHeaderString = StaticHeaderString::from_static("flow");
 
 impl HostSettings {
     pub fn new(name: HostName) -> Self {
@@ -47,7 +55,8 @@ impl HostSettings {
             protocol: Protocol::Https,
             cookie: CookieName::escape_str("UBERSESS"),
             url_port: None,
-            path_prefix: PathPrefix::default()
+            workflow_path: DEFAULT_WORKFLOW_PATH.to_header_string(),
+            path_prefix: DEFAULT_PATH_PREFIX.to_header_string()
         }
     }
 
@@ -56,8 +65,16 @@ impl HostSettings {
         self
     }
 
-    pub fn with_path_prefix(mut self, path_prefix: PathPrefix) -> Self {
-        self.path_prefix = path_prefix;
+    pub fn with_path_prefix(mut self, path_prefix: UriPath) -> Self {
+        self.path_prefix = path_prefix.header_string();
+
+        if !self.path_prefix.as_str().ends_with('/') {
+            self.path_prefix.push(FORWARD_SLASH);
+        }
+ 
+        self.workflow_path = self.path_prefix.clone();
+
+        self.workflow_path.push_str(&FLOW.to_header_string());
         self
     }
 
@@ -71,18 +88,20 @@ impl HostSettings {
         self
     }
 
-    fn workflow_url(&self) -> String {
-        let port_str =
-            if let Some(port) = self.url_port {
-                if port != self.protocol.default_port() {
-                    format!(":{}", port)
-                } else {
-                    "".to_owned()
-                }
-            } else {
-                "".to_owned()
-            };
-        format!("{}{}{}{}flow", self.protocol.url_prefix(), self.name, port_str, self.path_prefix)
+    fn workflow_url(&self) -> HeaderString {
+        let mut header_string = self.protocol.url_prefix().to_header_string();
+        header_string.push_str(self.name.as_header_string());
+
+        if let Some(port) = self.url_port {
+            if port != self.protocol.default_port() {
+                header_string.push(COLON);
+                header_string.push_str(&HeaderString::format_u16(port));
+            }
+        }
+
+        header_string.push_str(&self.workflow_path);
+
+        header_string
     }
 }
 
@@ -146,7 +165,7 @@ pub struct ServerInternal {
     token_expiry: u32,
     no_plain_html: bool,
     hosts: HashMap<HostName, Host>,
-    authority_workflow_url: String,
+    authority_workflow_url: HeaderString,
     authority_name: HostName
 }
 
@@ -213,7 +232,7 @@ enum Behaviour {
 #[derive(Clone, Debug)]
 struct Host {
     name: HostName,
-    workflow_url: String,
+    workflow_url: HeaderString,
     workflow_path: String,
     path_prefix: String,
     cookie: CookieName,

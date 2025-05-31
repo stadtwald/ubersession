@@ -20,7 +20,6 @@ pub mod host_name;
 pub mod html;
 pub mod http_errors;
 pub mod keypair;
-pub mod path_prefix;
 pub mod protocol;
 mod serde;
 pub mod session_token;

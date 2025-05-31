@@ -25,6 +25,7 @@ use axum::routing;
 use tokio::net::TcpListener;
 use ubersession_axum::adapt::*;
 use ubersession_core::cookie::*;
+use ubersession_core::uri::UriPath;
 use ubersession_server::*;
 
 use crate::keypair::Keypair;
@@ -49,8 +50,8 @@ pub struct Serve {
     pub no_plain_html: bool,
 
     /// Prefix to use for workflow URLs (will have / suffixed automatically)
-    #[arg(long, default_value = "/_session")]
-    pub url_prefix: PathPrefix,
+    #[arg(long, default_value = "/_session/")]
+    pub url_prefix: UriPath,
 
     /// Domain to use for managing authoritative session state (with optional port to use for
     /// generating URLs)

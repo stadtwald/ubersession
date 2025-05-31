@@ -22,5 +22,5 @@ pub use ubersession_core::cookie::CookieName;
 pub use ubersession_core::html;
 pub use ubersession_core::http_errors as errors;
 pub use ubersession_core::host_name::HostNameAndPort;
-pub use ubersession_core::path_prefix::{InvalidPathPrefix, PathPrefix};
+pub use ubersession_core::uri::{InvalidUri, UriPath};
 
