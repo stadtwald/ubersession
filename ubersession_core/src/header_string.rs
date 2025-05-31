@@ -99,6 +99,10 @@ impl HeaderString {
         Self(format!("{}", value))
     }
 
+    pub fn from_urlencoded<T: Serialize>(value: &T) -> Result<Self, serde_urlencoded::ser::Error> {
+        serde_urlencoded::to_string(value).map(Self)
+    }
+
     pub fn to_header_value(&self) -> HeaderValue {
         self.0.clone().try_into().unwrap()
     }
@@ -121,6 +125,12 @@ impl HeaderString {
 
     pub fn push_str(&mut self, s: &HeaderString) -> () {
         self.0.push_str(&s.0)
+    }
+
+    pub fn push_urlencoded<T: Serialize>(&mut self, value: &T) -> Result<(), serde_urlencoded::ser::Error> {
+        let s = serde_urlencoded::to_string(value)?;
+        self.0.push_str(&s);
+        Ok(())
     }
 
     fn validate(value: &str) -> Result<(), InvalidHeaderStringChar> {

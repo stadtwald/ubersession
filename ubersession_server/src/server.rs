@@ -43,6 +43,7 @@ pub struct HostSettings {
 }
 
 const FORWARD_SLASH: HeaderStringChar = HeaderStringChar::from_static('/');
+const QUESTION_MARK: HeaderStringChar = HeaderStringChar::from_static('?');
 const SINGLE_FORWARD_SLASH: StaticHeaderString = StaticHeaderString::from_static("/");
 const COLON: HeaderStringChar = HeaderStringChar::from_static(':');
 const DEFAULT_PATH_PREFIX: StaticHeaderString = StaticHeaderString::from_static("/_session/");
@@ -406,7 +407,9 @@ impl Host {
                     for_host: Some(self.name.to_owned())
                 };
 
-                let uri = HeaderString::try_from(format!("{}?{}", server.authority_workflow_url, serde_urlencoded::to_string(&query).unwrap())).unwrap();
+                let mut uri = server.authority_workflow_url.clone();
+                uri.push(QUESTION_MARK);
+                uri.push_urlencoded(&query).unwrap();
 
                 Ok(redirect(uri))
             }

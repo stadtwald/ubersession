@@ -30,6 +30,9 @@ features = ['derive']
 [dependencies.serde_json]
 version = '1.0.140'
 
+[dependencies.serde_urlencoded]
+version = "0.7.1"
+
 [dependencies.thiserror]
 version = "2.0.12"
 
