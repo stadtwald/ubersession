@@ -63,6 +63,42 @@ impl TryFrom<char> for HeaderStringChar {
 pub struct HeaderString(String);
 
 impl HeaderString {
+    pub fn new() -> Self {
+        Self(String::new())
+    }
+
+    pub fn format_u8(value: u8) -> Self {
+        Self::format_u64(value as u64)
+    }
+
+    pub fn format_u16(value: u16) -> Self {
+        Self::format_u64(value as u64)
+    }
+
+    pub fn format_u32(value: u32) -> Self {
+        Self::format_u64(value as u64)
+    }
+
+    pub fn format_u64(value: u64) -> Self {
+        Self(format!("{}", value))
+    }
+
+    pub fn format_i8(value: i8) -> Self {
+        Self::format_i64(value as i64)
+    }
+
+    pub fn format_i16(value: i16) -> Self {
+        Self::format_i64(value as i64)
+    }
+
+    pub fn format_i32(value: i32) -> Self {
+        Self::format_i64(value as i64)
+    }
+
+    pub fn format_i64(value: i64) -> Self {
+        Self(format!("{}", value))
+    }
+
     pub fn to_header_value(&self) -> HeaderValue {
         self.0.clone().try_into().unwrap()
     }
