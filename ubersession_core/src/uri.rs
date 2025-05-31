@@ -70,7 +70,10 @@ enum InvalidUriKind {
     InvalidPath,
 
     #[error("Is not a relative URI")]
-    NotRelative
+    NotRelative,
+
+    #[error("Contains a query string")]
+    NotJustPath
 }
 
 #[derive(Clone, Debug, Error)]
@@ -210,8 +213,12 @@ impl Uri {
         self.absolute.as_ref().map(|x| &x.host)
     }
 
-    pub fn path<'a>(&'a self) -> &'a HeaderString {
+    pub fn path_str<'a>(&'a self) -> &'a HeaderString {
         &self.path
+    }
+
+    pub fn path(&self) -> UriPath {
+        UriPath(self.path.clone())
     }
 
     pub fn query_str<'a>(&'a self) -> Option<&'a HeaderString> {
@@ -298,8 +305,12 @@ impl RelativeUri {
         }
     }
 
-    pub fn path<'a>(&'a self) -> &'a HeaderString {
+    pub fn path_str<'a>(&'a self) -> &'a HeaderString {
         &self.path
+    }
+
+    pub fn path(&self) -> UriPath {
+        UriPath(self.path.clone())
     }
 
     pub fn query_str<'a>(&'a self) -> Option<&'a HeaderString> {
@@ -318,6 +329,57 @@ impl RelativeUri {
             header_string.push_str(query);
         }
         header_string
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash)]
+pub struct UriPath(HeaderString);
+
+impl Display for UriPath {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl std::str::FromStr for UriPath {
+    type Err = InvalidUri;
+
+    fn from_str(value: &str) -> Result<Self, InvalidUri> {
+        let relative_uri = value.parse::<RelativeUri>()?;
+
+        if relative_uri.query_str().is_some() {
+            Err(InvalidUriKind::NotJustPath)?
+        }
+
+        Ok(relative_uri.path())
+    }
+}
+
+impl UriPath {
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        self.0.as_str()
+    }
+
+    pub fn header_string(&self) -> HeaderString {
+        self.0.clone()
+    }
+}
+
+impl AsRef<str> for UriPath {
+    fn as_ref<'a>(&'a self) -> &'a str {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<HeaderString> for UriPath {
+    fn as_ref<'a>(&'a self) -> &'a HeaderString {
+        &self.0
+    }
+}
+
+impl<T: AsRef<str>> PartialEq<T> for UriPath {
+    fn eq(&self, other: &T) -> bool {
+        self.as_str() == other.as_ref()
     }
 }
 
@@ -354,7 +416,8 @@ mod tests {
             "http://example.org/test_page/test",
             "http://example.com/test.php?hello=world",
             "http://example.net/?hello=world",
-            "http://example.com/test/test.php?hello=world&test=another"
+            "http://example.com/test/test.php?hello=world&test=another",
+            "http://example.com/search?query=test%20pharse"
         ];
 
         for x in must_succeed {
@@ -370,11 +433,26 @@ mod tests {
             assert!(x.parse::<RelativeUri>().is_err());
         }
 
-        let must_succeed = ["/", "/hello", "/hello/world", "/hello/world/", "/this%20is%20allowed", "/~mike", "/UPPERCASE/is/also/allowed", "/test-page/", "/test_page/test"];
+        let must_succeed = ["/", "/hello", "/hello/world", "/hello/world/", "/this%20is%20allowed", "/~mike", "/UPPERCASE/is/also/allowed", "/test-page/", "/test_page/test", "/test?hello=world&x=test"];
 
         for x in must_succeed {
             assert!(x.parse::<RelativeUri>().is_ok());
             assert!(!(x.parse::<Uri>().unwrap().is_absolute()));
+        }
+    }
+
+    #[test]
+    fn test_path_validation() -> () {
+        let must_fail = ["", "http://example.net/hello", "/hello?query=string", "blah", "/?", "/test hello"];
+
+        for x in must_fail {
+            assert!(x.parse::<UriPath>().is_err());
+        }
+
+        let must_pass = ["/test", "/", "/hello-world/this/is/a/test", "/test/test", "/test/test/", "/with%20escaped%spaces"];
+
+        for x in must_pass {
+            assert!(x.parse::<UriPath>().is_ok());
         }
     }
 }
