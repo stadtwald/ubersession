@@ -150,7 +150,9 @@ impl TryFrom<HeaderValue> for HeaderString {
     }
 }
 
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Copy, Debug, Eq)]
+#[derive(Serialize)]
+#[serde(into = "&str")]
 pub struct StaticHeaderString(&'static str);
 
 impl StaticHeaderString {
@@ -183,6 +185,18 @@ impl StaticHeaderString {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+}
+
+impl Display for StaticHeaderString {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+impl From<StaticHeaderString> for &'static str {
+    fn from(value: StaticHeaderString) -> &'static str {
+        value.0
     }
 }
 
