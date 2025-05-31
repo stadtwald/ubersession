@@ -57,7 +57,7 @@ impl TryFrom<char> for HeaderStringChar {
 
 /// A HTTP header value which is guaranteed to a valid string, too
 /// Has a few utilities to infallibly manipulate things we already know are HeaderStrings.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash)]
 #[derive(Deserialize, Serialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct HeaderString(String);
@@ -132,6 +132,12 @@ impl TryFrom<String> for HeaderString {
     }
 }
 
+impl AsRef<str> for HeaderString {
+    fn as_ref<'a>(&'a self) -> &'a str {
+        self.0.as_str()
+    }
+}
+
 #[derive(Clone, Debug, Error)]
 #[error("HTTP header cannot be represented as ASCII string")]
 pub struct InvalidHeaderString;
@@ -141,6 +147,60 @@ impl TryFrom<HeaderValue> for HeaderString {
 
     fn try_from(value: HeaderValue) -> Result<Self, InvalidHeaderString> {
         Ok(Self(value.to_str().map_err(|_| InvalidHeaderString)?.to_owned()))
+    }
+}
+
+#[derive(Clone, Debug, Eq)]
+pub struct StaticHeaderString(&'static str);
+
+impl StaticHeaderString {
+    pub const fn from_static(value: &'static str) -> Self {
+        let mut i = 0usize;
+
+        let bytes = value.as_bytes();
+
+        while i < bytes.len() {
+            if !valid_char(bytes[i] as char) {
+                panic!("Character not allowed in HTTP header");
+            }
+            i += 1;
+        }
+
+        Self(value)
+    }
+
+    pub fn to_header_string(&self) -> HeaderString {
+        HeaderString(self.0.to_owned())
+    }
+
+    pub fn to_header_value(&self) -> HeaderValue {
+        self.0.to_owned().try_into().unwrap()
+    }
+
+    pub fn as_str<'a>(&'a self) -> &'a str {
+        &self.0
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl AsRef<str> for StaticHeaderString {
+    fn as_ref<'a>(&'a self) -> &'a str {
+        self.0
+    }
+}
+
+impl<T: AsRef<str>> PartialEq<T> for HeaderString {
+    fn eq(&self, other: &T) -> bool {
+        self.0.as_str() == other.as_ref()
+    }
+}
+
+impl<T: AsRef<str>> PartialEq<T> for StaticHeaderString {
+    fn eq(&self, other: &T) -> bool {
+        self.0 == other.as_ref()
     }
 }
 
