@@ -27,7 +27,7 @@ use ubersession_core::header_string::{HeaderString, HeaderStringChar, StaticHead
 use ubersession_core::host_name::{HostName, HostNameSource};
 pub use ubersession_core::protocol::Protocol;
 use ubersession_core::session_token::{SessionToken, SessionTokenLoader};
-use ubersession_core::uri::UriPath;
+use ubersession_core::uri::{RelativeUri, UriPath};
 
 use crate::errors::*;
 use crate::html::HtmlEscapedText;
@@ -43,6 +43,7 @@ pub struct HostSettings {
 }
 
 const FORWARD_SLASH: HeaderStringChar = HeaderStringChar::from_static('/');
+const SINGLE_FORWARD_SLASH: StaticHeaderString = StaticHeaderString::from_static("/");
 const COLON: HeaderStringChar = HeaderStringChar::from_static(':');
 const DEFAULT_PATH_PREFIX: StaticHeaderString = StaticHeaderString::from_static("/_session/");
 const DEFAULT_WORKFLOW_PATH: StaticHeaderString = StaticHeaderString::from_static("/_session/flow");
@@ -288,16 +289,18 @@ impl Host {
         let redir_path = {
             let candidate_path =
                 if let Some(ref body) = body_parameters {
-                    body.path.as_str()
+                    body.path.clone()
                 } else {
-                    query_parameters.path.as_deref().unwrap_or("/")
+                    query_parameters.path.clone().unwrap_or_else(|| SINGLE_FORWARD_SLASH.to_header_string())
                 };
-            if candidate_path.starts_with(&self.path_prefix) {
-                "/"
-            } else if !candidate_path.starts_with('/') {
-                "/"
+            if let Ok(_) = candidate_path.as_str().parse::<RelativeUri>() {
+                if candidate_path.as_str().starts_with(&self.path_prefix) {
+                    SINGLE_FORWARD_SLASH.to_header_string()
+                } else {
+                    candidate_path
+                }
             } else {
-                candidate_path
+                SINGLE_FORWARD_SLASH.to_header_string()
             }
         };
 
@@ -352,7 +355,7 @@ impl Host {
                         "<style type=\"text/css\">body { background-color:#FFFFF0; color:#000040; font-family:roboto, 'open sans', sans-serif}</style>"
                     };
 
-                let escaped_path = HtmlEscapedText::new(redir_path);
+                let escaped_path = HtmlEscapedText::new(redir_path.as_str());
                 let escaped_encoded_session_token = HtmlEscapedText::new(&encoded_session_token);
                 let html = format!(
                     concat!(
@@ -399,13 +402,13 @@ impl Host {
                 Ok(redirect(redir_path))
             } else {
                 let query = ServiceRequestParameters {
-                    path: Some(redir_path.to_owned()),
+                    path: Some(redir_path),
                     for_host: Some(self.name.to_owned())
                 };
 
-                let uri = format!("{}?{}", server.authority_workflow_url, serde_urlencoded::to_string(&query).unwrap());
+                let uri = HeaderString::try_from(format!("{}?{}", server.authority_workflow_url, serde_urlencoded::to_string(&query).unwrap())).unwrap();
 
-                Ok(redirect(&uri))
+                Ok(redirect(uri))
             }
         }
     }
@@ -429,7 +432,7 @@ struct NotFound;
 struct ServiceRequestParameters {
     #[serde(rename = "for")]
     for_host: Option<HostName>,
-    path: Option<String>
+    path: Option<HeaderString>
 }
 
 impl Default for ServiceRequestParameters {
@@ -450,22 +453,13 @@ impl HostNameSource for ServiceRequestParameters {
 #[derive(Deserialize, Serialize)]
 struct ServiceRequestBody {
     token: String,
-    path: String
+    path: HeaderString
 }
 
-const SINGLE_SLASH: HeaderValue = HeaderValue::from_static("/");
-
-fn redirect(uri: &str) -> Response<Vec<u8>> {
+fn redirect<T: Into<HeaderValue>>(uri: T) -> Response<Vec<u8>> {
     let mut response = Response::new(Vec::new());
-
-    if let Ok(redir_path_hv) = HeaderValue::from_str(uri) {
-        response.headers_mut().insert(LOCATION, redir_path_hv);
-    } else {
-        response.headers_mut().insert(LOCATION, SINGLE_SLASH);
-    }
-
+    response.headers_mut().insert(LOCATION, uri.into());
     *response.status_mut() = StatusCode::SEE_OTHER;
-    
     response
 }
 
