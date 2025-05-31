@@ -1,10 +1,10 @@
 [package]
 name = 'ubersession_core'
-version = '0.2.0'
+version = '0.3.0'
 authors = ['William Demchick <william.demchick@gmail.com>']
 license = "ISC"
 edition = '2024'
-description = 'A simple mechanism for cross-domain WWW session establishment - core data structures'
+description = 'A simple mechanism for cross-domain WWW session establishment - core data structures and utilities'
 repository = 'https://github.com/stadtwald/ubersession'
 
 [dependencies.chrono]
