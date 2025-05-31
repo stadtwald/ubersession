@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter, Write};
 use thiserror::Error;
 
+use crate::header_string::{HeaderString, HeaderStringChar};
 use crate::protocol::Protocol;
 
 #[derive(Clone, Copy, Debug, Error)]
@@ -36,7 +37,7 @@ pub enum InvalidHostName {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[derive(Deserialize, Serialize)]
 #[serde(try_from = "&str", into = "String")]
-pub struct HostName(String);
+pub struct HostName(HeaderString);
 
 impl HostName {
     pub fn new(value: &str) -> Result<Self, InvalidHostName> {
@@ -51,18 +52,28 @@ impl HostName {
                     return Err(InvalidHostName::InvalidLabel);
                 }
             }
-            Ok(Self(value))
+            Ok(Self(value.parse().map_err(|_| InvalidHostName::InvalidLabel)?))
         }
     }
 
     pub fn as_str<'a>(&'a self) -> &'a str {
         self.0.as_str()
     }
+
+    pub fn as_header_string<'a>(&'a self) -> &'a HeaderString {
+        &self.0
+    }
+}
+
+impl From<HostName> for HeaderString {
+    fn from(value: HostName) -> Self {
+        value.0
+    }
 }
 
 impl Display for HostName {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        self.0.fmt(formatter)
     }
 }
 
@@ -84,7 +95,7 @@ impl TryFrom<&str> for HostName {
 
 impl From<HostName> for String {
     fn from(value: HostName) -> Self {
-        value.0
+        value.0.into()
     }
 }
 
@@ -126,6 +137,8 @@ pub struct HostNameAndPort {
     port: Option<u16>
 }
 
+const COLON: HeaderStringChar = HeaderStringChar::from_static(':');
+
 impl HostNameAndPort {
     pub fn new(host_name: HostName, port: Option<u16>) -> Result<Self, CannotUseZeroTcpPort> {
         if port == Some(0) {
@@ -161,6 +174,22 @@ impl HostNameAndPort {
             }
         }
         self
+    }
+
+    pub fn to_header_string(&self) -> HeaderString {
+        let mut header_string: HeaderString = self.host_name.clone().into();
+        if let Some(port) = self.port {
+            header_string.push(COLON);
+            let port_str = HeaderString::format_u16(port);
+            header_string.push_str(&port_str);
+        }
+        header_string
+    }
+}
+
+impl From<HostNameAndPort> for HeaderString {
+    fn from(value: HostNameAndPort) -> Self {
+        value.to_header_string()
     }
 }
 

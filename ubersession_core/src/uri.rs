@@ -4,8 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 
+use crate::header_string::{HeaderString, HeaderStringChar};
 use crate::host_name::HostNameAndPort;
 use crate::protocol::Protocol;
+
+const QUESTION_MARK: HeaderStringChar = HeaderStringChar::from_static('?');
 
 #[derive(Clone, Debug)]
 pub struct AbsoluteComponent {
@@ -21,6 +24,12 @@ impl AbsoluteComponent {
     pub fn host<'a>(&'a self) -> &'a HostNameAndPort {
         &self.host
     }
+
+    pub fn header_string(&self) -> HeaderString {
+        let mut header_string = self.protocol.url_prefix().to_header_string();
+        header_string.push_str(&self.host.to_header_string());
+        header_string
+    }
 }
 
 impl Display for AbsoluteComponent {
@@ -35,9 +44,8 @@ impl Display for AbsoluteComponent {
 #[serde(try_from = "&str", into = "String")]
 pub struct Uri {
     absolute: Option<AbsoluteComponent>,
-    path: String,
-    query: Option<String>,
-    header_value: HeaderValue
+    path: HeaderString,
+    query: Option<HeaderString>
 }
 
 #[derive(Clone, Debug, Error)]
@@ -126,27 +134,20 @@ impl std::str::FromStr for Uri {
             Err(InvalidUriKind::InvalidPath)?
         }
 
-        let query = uri.query().map(|x| x.to_owned());
-
-        let mut display = absolute.as_ref().map(|x| x.to_string()).unwrap_or_else(|| String::new());
-        display.push_str(&path);
-        if let Some(ref query) = query {
-            display.push('?');
-            display.push_str(query);
-        }
+        let query = uri.query().map(|x| x.parse().map_err(|_| InvalidUriKind::InvalidPath)).transpose()?;
 
         Ok(Self {
             absolute: absolute,
-            path: path,
-            query: query,
-            header_value: HeaderValue::try_from(display).map_err(|_| InvalidUriKind::InvalidUri)?
+            path: path.try_into().map_err(|_| InvalidUriKind::InvalidPath)?,
+            query: query
         })
     }
+
 }
 
 impl From<Uri> for HeaderValue {
     fn from(value: Uri) -> HeaderValue {
-        value.header_value
+        value.header_string().into()
     }
 }
 
@@ -164,11 +165,11 @@ impl Display for Uri {
             absolute.fmt(formatter)?;
         }
 
-        formatter.write_str(&self.path)?;
+        formatter.write_str(self.path.as_str())?;
 
         if let Some(ref query) = self.query {
             formatter.write_str("?")?;
-            formatter.write_str(&query)?;
+            formatter.write_str(query.as_str())?;
         }
 
         Ok(())
@@ -196,8 +197,7 @@ impl Uri {
         } else {
             Ok(RelativeUri {
                 path: self.path,
-                query: self.query,
-                header_value: self.header_value
+                query: self.query
             })
         }
     }
@@ -210,28 +210,32 @@ impl Uri {
         self.absolute.as_ref().map(|x| &x.host)
     }
 
-    pub fn path<'a>(&'a self) -> &'a str {
-        self.path.as_str()
+    pub fn path<'a>(&'a self) -> &'a HeaderString {
+        &self.path
     }
 
-    pub fn query_str<'a>(&'a self) -> Option<&'a str> {
-        self.query.as_deref()
+    pub fn query_str<'a>(&'a self) -> Option<&'a HeaderString> {
+        self.query.as_ref()
     }
 
     pub fn without_query(mut self) -> Self {
-        if self.query.is_none() {
-            self
-        } else {
-            self.query = None;
-            self.header_value = HeaderValue::try_from(&self.to_string()).unwrap(); // previous validation
-                                                                                   // should ensure this
-                                                                                   // unwrap suceeeds
-            self
-        }
+        self.query = None;
+        self
     }
 
-    pub fn header_value(&self) -> HeaderValue {
-        self.header_value.clone()
+    pub fn header_string(&self) -> HeaderString {
+        let mut header_string =
+            if let Some(ref absolute) = self.absolute {
+                absolute.header_string()
+            } else {
+                HeaderString::new()
+            };
+        header_string.push_str(&self.path);
+        if let Some(ref query) = self.query {
+            header_string.push(QUESTION_MARK);
+            header_string.push_str(query);
+        }
+        header_string
     }
 }
 
@@ -239,18 +243,17 @@ impl Uri {
 #[derive(Deserialize, Serialize)]
 #[serde(try_from = "&str", into = "String")]
 pub struct RelativeUri {
-    path: String,
-    query: Option<String>,
-    header_value: HeaderValue
+    path: HeaderString,
+    query: Option<HeaderString>
 }
 
 impl Display for RelativeUri {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.path)?;
+        formatter.write_str(self.path.as_str())?;
 
         if let Some(ref query) = self.query {
             formatter.write_str("?")?;
-            formatter.write_str(query)?;
+            formatter.write_str(query.as_str())?;
         }
 
         Ok(())
@@ -282,7 +285,7 @@ impl From<RelativeUri> for String {
 
 impl From<RelativeUri> for HeaderValue {
     fn from(value: RelativeUri) -> Self {
-        value.header_value
+        value.header_string().into()
     }
 }
 
@@ -291,33 +294,30 @@ impl RelativeUri {
         Uri {
             absolute: None,
             path: self.path,
-            query: self.query,
-            header_value: self.header_value
+            query: self.query
         }
     }
 
-    pub fn path<'a>(&'a self) -> &'a str {
-        self.path.as_str()
+    pub fn path<'a>(&'a self) -> &'a HeaderString {
+        &self.path
     }
 
-    pub fn query_str<'a>(&'a self) -> Option<&'a str> {
-        self.query.as_deref()
+    pub fn query_str<'a>(&'a self) -> Option<&'a HeaderString> {
+        self.query.as_ref()
     }
 
     pub fn without_query(mut self) -> Self {
-        if self.query.is_none() {
-            self
-        } else {
-            self.query = None;
-            self.header_value = HeaderValue::try_from(&self.to_string()).unwrap(); // previous validation
-                                                                                   // should ensure this
-                                                                                   // unwrap suceeeds
-            self
-        }
+        self.query = None;
+        self
     }
 
-    pub fn header_value(&self) -> HeaderValue {
-        self.header_value.clone()
+    pub fn header_string(&self) -> HeaderString {
+        let mut header_string = self.path.clone();
+        if let Some(ref query) = self.query {
+            header_string.push(QUESTION_MARK);
+            header_string.push_str(query);
+        }
+        header_string
     }
 }
 

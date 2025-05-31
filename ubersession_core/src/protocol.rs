@@ -17,6 +17,8 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::header_string::StaticHeaderString;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[derive(Deserialize, Serialize)]
 #[serde(try_from = "&str", into = "&'static str")]
@@ -60,16 +62,19 @@ impl std::str::FromStr for Protocol {
     }
 }
 
+const HTTP_SCHEME: StaticHeaderString = StaticHeaderString::from_static("http://");
+const HTTPS_SCHEME: StaticHeaderString = StaticHeaderString::from_static("https://");
+
 impl Protocol {
     pub fn is_secure(&self) -> bool {
         self == &Protocol::Https
     }
 
-    pub fn url_prefix(&self) -> &'static str {
+    pub fn url_prefix(&self) -> StaticHeaderString {
         use Protocol::*;
         match self {
-            &Http => "http://",
-            &Https => "https://"
+            &Http => HTTP_SCHEME,
+            &Https => HTTPS_SCHEME
         }
     }
 
