@@ -55,7 +55,7 @@ impl HostSettings {
         Self {
             name: name,
             protocol: Protocol::Https,
-            cookie: CookieName::escape_str("UBERSESS"),
+            cookie: CookieName::escape_str("UBERSESSION"),
             url_port: None,
             workflow_path: DEFAULT_WORKFLOW_PATH.to_header_string(),
             path_prefix: DEFAULT_PATH_PREFIX.to_header_string()
