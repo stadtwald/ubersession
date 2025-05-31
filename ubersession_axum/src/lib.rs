@@ -97,13 +97,7 @@ fn extract_session_from_parts(settings: &AxumSessionExtractionSettings, parts: &
 
     let verification_host = settings.host_name.as_ref().unwrap_or(&http_host);
 
-    let session_token_loader =
-        SessionTokenLoader {
-            required_http_host: verification_host.clone(),
-            verifying_key: settings.verifying_key
-        };
-
-    session_token_loader.attempt_load(&cookie_value)
+    SessionTokenLoader::new(verification_host.clone(), settings.verifying_key).attempt_load(&cookie_value)
 }
 
 fn from_request_parts(parts: &Parts) -> Result<SessionToken, Response> {

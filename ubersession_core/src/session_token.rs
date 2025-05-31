@@ -71,11 +71,18 @@ impl SessionToken {
 }
 
 pub struct SessionTokenLoader {
-    pub required_http_host: HostName,
-    pub verifying_key: VerifyingKey
+    required_http_host: HostName,
+    verifying_key: VerifyingKey
 }
 
 impl SessionTokenLoader {
+    pub fn new(required_http_host: HostName, verifying_key: VerifyingKey) -> Self {
+        Self {
+            required_http_host: required_http_host,
+            verifying_key: verifying_key
+        }
+    }
+
     pub fn attempt_load(&self, encoded_token: &str) -> Option<SessionToken> {
         let current_timestamp: u32 = Utc::now().timestamp().try_into().ok()?;
         let session_token: SessionToken = serde_json::from_str(&encoded_token).ok()?;

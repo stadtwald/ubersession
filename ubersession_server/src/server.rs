@@ -365,7 +365,7 @@ impl Host {
             let m_current_session_token = self.load_current_session_token(server, request.headers());
            
             if let Some(ref body) = body_parameters {
-                let m_new_session_token = (SessionTokenLoader { required_http_host: self.name.clone(), verifying_key: server.signing_key.verifying_key() }).attempt_load(&body.token);
+                let m_new_session_token = SessionTokenLoader::new(self.name.clone(), server.signing_key.verifying_key()).attempt_load(&body.token);
                 if let Some(new_session_token) = m_new_session_token {
                     let mut response = redirect(redir_path);
                     if m_current_session_token.map_or(true, |current_session_token| current_session_token.expires < new_session_token.expires) {
@@ -393,10 +393,7 @@ impl Host {
 
     fn load_current_session_token(&self, server: &ServerInternal, request_headers: &HeaderMap) -> Option<SessionToken> {
         let cookie_value = request_headers.extract_cookie(&self.cookie)?.unescape_str().ok()?;
-        (SessionTokenLoader {
-            required_http_host: self.name.clone(),
-            verifying_key: server.signing_key.verifying_key()
-        }).attempt_load(&cookie_value)
+        SessionTokenLoader::new(self.name.clone(), server.signing_key.verifying_key()).attempt_load(&cookie_value)
     }
 
 }
