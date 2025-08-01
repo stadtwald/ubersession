@@ -416,6 +416,14 @@ struct session_token *session_token_from_encoded(char *encoded) {
 
         if(quoted) {
             while(*inp != '"' && *inp != 0) {
+                if(*inp == '\\') { // we don't support escape sequences
+                    free(urldecoded);
+                    return 0;
+                }
+                if(*inp < ' ' || *inp > 126) { // we only support a subset of ASCII
+                    free(urldecoded);
+                    return 0;
+                }
                 inp += 1;
             }
             if(*inp != '"') {
