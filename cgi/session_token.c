@@ -482,12 +482,6 @@ struct session_token *session_token_from_encoded(char *encoded) {
         return 0;
     }
 
-    printf("encoded_public_key = %s\n", encoded_public_key);
-    printf("encoded_signature = %s\n", encoded_signature);
-    printf("encoded_host = %s\n", encoded_host);
-    printf("encoded_expires = %s\n", encoded_expires);
-    printf("encoded_id = %s\n", encoded_id);
-
     struct session_token *session_token = calloc(1, sizeof(struct session_token));
 
     if (session_token == 0) {
