@@ -51,6 +51,8 @@ static int b64digit(char digit) {
 static char *urldecode(char *encoded) {
     size_t percentages_count = 0;
     size_t total_count = 0;
+    int errored = 1;
+    char *storage = 0;
 
     {
         char *p = encoded;
@@ -60,11 +62,11 @@ static char *urldecode(char *encoded) {
                 percentages_count += 1;
             }
             if(*p < ' ') {
-                return 0;
+                goto cleanup;
             }
             total_count += 1;
             if(total_count > 2000) {
-                return 0;
+                goto cleanup;
             }
             p += 1;
         }
@@ -73,15 +75,15 @@ static char *urldecode(char *encoded) {
     size_t theoretical_savings = percentages_count * 2;
 
     if (theoretical_savings >= total_count) {
-        return 0;
+        goto cleanup;
     }
 
     size_t outlength = total_count - theoretical_savings;
 
-    char *storage = malloc(1 + outlength);
+    storage = malloc(1 + outlength);
 
     if (storage == 0) {
-        return 0;
+        goto cleanup;
     }
 
     char *outp = storage;
@@ -93,22 +95,19 @@ static char *urldecode(char *encoded) {
 
             char high = hexdigit(*inp);
             if(high < 0) {
-                free(storage);
-                return 0;
+                goto cleanup;
             }
             inp += 1;
 
             char low = hexdigit(*inp);
-            if(low < 0) { 
-                free(storage);
-                return 0;
+            if(low < 0) {
+                goto cleanup;
             }
             
             *outp = (high << 4) + low;
 
             if(*outp == 0) {
-                free(storage);
-                return 0;
+                goto cleanup;
             }
         } else {
             *outp = *inp;
@@ -116,7 +115,16 @@ static char *urldecode(char *encoded) {
         inp += 1;
         outp += 1;
     }
-    
+   
+    errored = 0;
+
+cleanup:
+
+    if(errored && storage != 0) {
+        free(storage);
+        storage = 0;
+    }
+
     return storage;
 }
 
@@ -344,6 +352,12 @@ static int decode_uuid(char *encoded, uint8_t *outp) {
     return 0;
 }
 
+static inline void skip_whitespace(char **p) {
+    while(**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') {
+        *p += 1;
+    }
+}
+
 struct session_token *session_token_from_encoded(char *encoded) {
     char *urldecoded = urldecode(encoded);
 
@@ -351,6 +365,8 @@ struct session_token *session_token_from_encoded(char *encoded) {
         return 0;
     }
 
+    struct session_token *session_token = 0;
+    int errored = 1;
     char *inp = urldecoded;
     char *encoded_public_key = 0;
     char *encoded_signature = 0;
@@ -359,19 +375,15 @@ struct session_token *session_token_from_encoded(char *encoded) {
     char *encoded_id = 0;
 
     if(*inp != '{') {
-        free(urldecoded);
-        return 0;
+        goto cleanup;
     }
     inp += 1;
 
     while(1) {
-        while(*inp == ' ') {
-            inp += 1;
-        }
+        skip_whitespace(&inp);
 
         if(*inp != '"') {
-            free(urldecoded);
-            return 0;
+            goto cleanup;
         }
         inp += 1;
 
@@ -381,25 +393,19 @@ struct session_token *session_token_from_encoded(char *encoded) {
         }
 
         if (*inp != '"') {
-            free(urldecoded);
-            return 0;
+            goto cleanup;
         }
         *inp = 0;
         inp += 1;
 
-        while(*inp == ' ') {
-            inp += 1;
-        }
+        skip_whitespace(&inp);
 
         if (*inp != ':') {
-            free(urldecoded);
-            return 0;
+            goto cleanup;
         }
         inp += 1;
 
-        while(*inp == ' ') {
-            inp += 1;
-        }
+        skip_whitespace(&inp);
 
         int quoted = 0;
 
@@ -407,8 +413,7 @@ struct session_token *session_token_from_encoded(char *encoded) {
             inp += 1;
             quoted = 1;
         } else if(*inp < '0' || *inp > '9') {
-            free(urldecoded);
-            return 0;
+            goto cleanup;
         }
 
         char *value = inp;
@@ -417,18 +422,15 @@ struct session_token *session_token_from_encoded(char *encoded) {
         if(quoted) {
             while(*inp != '"' && *inp != 0) {
                 if(*inp == '\\') { // we don't support escape sequences
-                    free(urldecoded);
-                    return 0;
+                    goto cleanup;
                 }
                 if(*inp < ' ' || *inp > 126) { // we only support a subset of ASCII
-                    free(urldecoded);
-                    return 0;
+                    goto cleanup;
                 }
                 inp += 1;
             }
             if(*inp != '"') {
-                free(urldecoded);
-                return 0;
+                goto cleanup;
             }
             *inp = 0;
             inp += 1;
@@ -456,9 +458,7 @@ struct session_token *session_token_from_encoded(char *encoded) {
         }
 
         if(next == ' ') {
-            while(*inp == ' ') {
-                inp += 1;
-            }
+            skip_whitespace(&inp);
             next = *inp;
             inp += 1;
         }
@@ -466,27 +466,28 @@ struct session_token *session_token_from_encoded(char *encoded) {
             continue;
         }
         if(next == '}') {
-            while(*inp == ' ') {
-                inp += 1;
-            }
+            skip_whitespace(&inp);
             if(*inp != 0) {
-                free(urldecoded);
-                return 0;
+                goto cleanup;
             }
             break;
         }
     }
 
-    if(encoded_public_key == 0 || encoded_signature == 0 || encoded_host == 0 || encoded_expires == 0 || encoded_id == 0) {
-        free(urldecoded);
-        return 0;
+    if(
+        encoded_public_key == 0 ||
+        encoded_signature == 0 ||
+        encoded_host == 0 ||
+        encoded_expires == 0 ||
+        encoded_id == 0
+    ) {
+        goto cleanup;
     }
 
-    struct session_token *session_token = calloc(1, sizeof(struct session_token));
+    session_token = calloc(1, sizeof(struct session_token));
 
     if (session_token == 0) {
-        free(urldecoded);
-        return 0;
+        goto cleanup;
     }
 
     {
@@ -494,41 +495,39 @@ struct session_token *session_token_from_encoded(char *encoded) {
         char *end = 0;
         long long expires = strtoll(encoded_expires, &end, 10);
         if (errno != 0 || *end != 0 || expires > 0xFFFFFFFF) {
-            free(urldecoded);
-            free(session_token);
-            return 0;
+            goto cleanup;
         }
 
         session_token->expires = expires;
     }
 
     if(decode_uuid(encoded_id, &session_token->uuid[0]) == -1) {
-        free(urldecoded);
-        free(session_token);
-        return 0;
+        goto cleanup;
     }
 
     if(decode_base64_v32(encoded_public_key, &session_token->public_key[0]) == -1) {
-        free(urldecoded);
-        free(session_token);
-        return 0;      
+        goto cleanup;
     }
 
     if(decode_base64_v64(encoded_signature, &session_token->signature[0]) == -1) {
-        free(urldecoded);
-        free(session_token);
-        return 0;      
+        goto cleanup;
     }
 
     if(strlen(encoded_host) > SESSION_TOKEN_MAX_HOST_LENGTH) {
-        free(urldecoded);
-        free(session_token);
-        return 0;       
+        goto cleanup;
     }
 
     strncpy(&session_token->host[0], encoded_host, SESSION_TOKEN_MAX_HOST_LENGTH + 1);
 
+    errored = 0;
+
+cleanup:
     free(urldecoded);
+
+    if(errored && session_token != 0) {
+        free(session_token);
+        session_token = 0;
+    }
 
     return session_token;
 }
