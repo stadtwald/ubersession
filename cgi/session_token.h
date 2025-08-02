@@ -20,10 +20,12 @@
 
 struct session_token {
     uint8_t public_key[32];
+    char encoded_public_key[45];
     uint8_t signature[64];
     char host[SESSION_TOKEN_MAX_HOST_LENGTH + 1];
     uint32_t expires;
     uint8_t uuid[16];
+    char encoded_uuid[37];
 };
 
 int session_token_from_encoded(char *encoded, struct session_token *session_token);

@@ -518,6 +518,8 @@ int session_token_from_encoded(char *encoded, struct session_token *session_toke
     }
 
     strncpy(&session_token->host[0], encoded_host, SESSION_TOKEN_MAX_HOST_LENGTH + 1);
+    strncpy(&session_token->encoded_uuid[0], encoded_id, 36);
+    strncpy(&session_token->encoded_public_key[0], encoded_public_key, 44);
 
     errored = 0;
 
