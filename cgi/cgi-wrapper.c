@@ -20,10 +20,10 @@ static int find_cookie_value(char *outp) {
         char *current = cookie_header;
 
         while(1) {
-            int match = (strncmp(current, "UBERSESS=", 9) == 0);
+            int match = (strncmp(current, "UBERSESSION=", 12) == 0);
 
             if(match) {
-                current += 9;
+                current += 12;
                 while(*current != ';' && *current != 0) {
                     *outp = *current;
                     current += 1;
@@ -53,6 +53,28 @@ static int find_cookie_value(char *outp) {
     return -1;
 }
 
+static int compare_hosts(char *host1, char *host2) {
+    while(1) {
+        int host1_ended = (*host1 == ':' || *host1 == 0);
+        int host2_ended = (*host2 == ':' || *host2 == 0);
+
+        if(host1_ended && host2_ended) {
+            return 0;
+        }
+
+        if(host1_ended || host2_ended) {
+            return -1;
+        }
+
+        if(*host1 != *host2) {
+            return -1;
+        }
+
+        host1 += 1;
+        host2 += 1;
+    }
+}
+
 int main(int argc, char **argv) {
     if(argc != 2) {
         errx(1, "must be called with exactly one command line argument; was called with %i", argc);
@@ -76,7 +98,7 @@ int main(int argc, char **argv) {
         if(session_token_from_encoded(cookie_value, &session_token) != -1) {
             char *http_host = getenv("HTTP_HOST");
             if(http_host != 0) {
-                if(strcmp(session_token.host, http_host) == 0) {
+                if(compare_hosts(session_token.host, http_host) == 0) {
                     if(session_token_verify(&session_token) != -1) {
                         verified = 1;
                     }
