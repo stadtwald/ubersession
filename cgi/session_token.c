@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include "session_token.h"
 
 static int hexdigit(char digit) {
@@ -358,14 +359,13 @@ static inline void skip_whitespace(char **p) {
     }
 }
 
-struct session_token *session_token_from_encoded(char *encoded) {
+int session_token_from_encoded(char *encoded, struct session_token *session_token) {
     char *urldecoded = urldecode(encoded);
 
     if(urldecoded == 0) {
-        return 0;
+        goto cleanup;
     }
 
-    struct session_token *session_token = 0;
     int errored = 1;
     char *inp = urldecoded;
     char *encoded_public_key = 0;
@@ -484,8 +484,6 @@ struct session_token *session_token_from_encoded(char *encoded) {
         goto cleanup;
     }
 
-    session_token = calloc(1, sizeof(struct session_token));
-
     if (session_token == 0) {
         goto cleanup;
     }
@@ -522,14 +520,15 @@ struct session_token *session_token_from_encoded(char *encoded) {
     errored = 0;
 
 cleanup:
-    free(urldecoded);
-
-    if(errored && session_token != 0) {
-        free(session_token);
-        session_token = 0;
+    if(urldecoded != 0) {
+        free(urldecoded);
     }
 
-    return session_token;
+    if(errored) {
+        bzero(session_token, sizeof(struct session_token));
+    }
+
+    return errored ? -1 : 0;
 }
 
 

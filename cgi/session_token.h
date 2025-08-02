@@ -26,6 +26,5 @@ struct session_token {
     uint8_t uuid[16];
 };
 
-struct session_token *session_token_from_encoded(char *encoded);
-
+int session_token_from_encoded(char *encoded, struct session_token *session_token);
 
