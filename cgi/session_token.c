@@ -19,7 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include "session_token.h"
+#include "crypto/crypto_api.h"
 
 static int hexdigit(char digit) {
     if(digit >= '0' && digit <= '9') {
@@ -531,4 +533,43 @@ cleanup:
     return errored ? -1 : 0;
 }
 
+int session_token_verify(struct session_token *session_token) {
+    if(time(0) > session_token->expires) {
+        return -1;
+    }
+
+    size_t host_length = strlen(session_token->host);
+    size_t message_length = host_length + 9 + 4 + 16;
+    size_t signature_length = message_length + 64;
+    uint8_t signature_buffer[SESSION_TOKEN_MAX_HOST_LENGTH + 9 + 4 + 16 + 64];
+    uint8_t dummy_buffer[SESSION_TOKEN_MAX_HOST_LENGTH + 9 + 4 + 16 + 64];
+
+    uint8_t *p = &signature_buffer[0];
+
+    memcpy(p, &session_token->signature[0], 64);
+    p += 64;
+
+    memcpy(p, "UBERSESS", 9);
+    p += 9;
+
+    *p = (session_token->expires >> 24);
+    p += 1;
+    *p = (session_token->expires >> 16) & 0xFF;
+    p += 1;
+    *p = (session_token->expires >> 8) & 0xFF;
+    p += 1;
+    *p = session_token->expires & 0xFF;
+    p += 1;
+
+    memcpy(p, session_token->uuid, 16);
+    p += 16;
+
+    memcpy(p, session_token->host, host_length);
+
+    unsigned long long dummy_length;
+
+    int verified = crypto_sign_ed25519_open(dummy_buffer, &dummy_length, signature_buffer, signature_length, session_token->public_key) != -1;
+
+    return verified ? 0 : -1;
+}
 

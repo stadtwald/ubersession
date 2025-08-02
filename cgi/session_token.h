@@ -27,4 +27,5 @@ struct session_token {
 };
 
 int session_token_from_encoded(char *encoded, struct session_token *session_token);
+int session_token_verify(struct session_token *session_token);
 
