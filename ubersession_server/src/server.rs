@@ -15,7 +15,7 @@
  */
 
 use ed25519_dalek::SigningKey;
-use http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, CONTENT_TYPE, LOCATION, SET_COOKIE};
+use http::header::{HeaderMap, HeaderValue, CACHE_CONTROL, CONTENT_TYPE, LOCATION, ORIGIN, SET_COOKIE};
 use http::{Method, Request, Response};
 use http::status::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -90,7 +90,7 @@ impl HostSettings {
         self
     }
 
-    fn workflow_url(&self) -> HeaderString {
+    fn origin(&self) -> HeaderString {
         let mut header_string = self.protocol.url_prefix().to_header_string();
         header_string.push_str(self.name.as_header_string());
 
@@ -100,6 +100,12 @@ impl HostSettings {
                 header_string.push_str(&HeaderString::format_u16(port));
             }
         }
+
+        header_string
+    }
+
+    fn workflow_url(&self) -> HeaderString {
+        let mut header_string = self.origin();
 
         header_string.push_str(&self.workflow_path);
 
@@ -168,12 +174,14 @@ pub struct ServerInternal {
     no_plain_html: bool,
     hosts: HashMap<HostName, Host>,
     authority_workflow_url: HeaderString,
+    authority_origin: HeaderString,
     authority_name: HostName
 }
 
 impl Server {
     fn new(settings: ServerSettings) -> Self {
         let authority_workflow_url = settings.authority.workflow_url();
+        let authority_origin = settings.authority.origin();
         let authority_name = settings.authority.name.clone();
 
         let mut hosts = HashMap::new();
@@ -190,6 +198,7 @@ impl Server {
             no_plain_html: settings.no_plain_html,
             hosts: hosts,
             authority_workflow_url: authority_workflow_url,
+            authority_origin: authority_origin,
             authority_name: authority_name
         }))
     }
@@ -388,6 +397,17 @@ impl Host {
             let m_current_session_token = self.load_current_session_token(server, request.headers());
            
             if let Some(ref body) = body_parameters {
+                if let Some(raw_origin) = request.headers().get(ORIGIN) {
+                    if let Ok(origin) = HeaderString::try_from(raw_origin.clone()) {
+                        if origin != server.authority_origin {
+                            Err(InvalidRequest)?
+                        }
+                    } else {
+                        Err(InvalidRequest)?
+                    }
+                } else {
+                    Err(InvalidRequest)?
+                }
                 let m_new_session_token = SessionTokenLoader::new(self.name.clone(), server.signing_key.verifying_key()).attempt_load(&body.token);
                 if let Some(new_session_token) = m_new_session_token {
                     let mut response = redirect(redir_path);
